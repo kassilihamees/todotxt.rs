@@ -33,7 +33,7 @@ Ctrl+S threshold; Alt arrows priority; Ctrl arrows threshold; Ctrl+Alt arrows du
 
 ## Validation and remaining gaps
 
-### Current assessment (2026-10-08)
+### Current assessment (2026-10-09)
 
 Core task/file functionality is implemented and covered by regression tests;
 full application parity has not been achieved. A percentage would imply a
@@ -44,25 +44,25 @@ complete feature audit and validation that we do not yet have.
 | Task editing, completion, priorities/dates, archive, sorts, grouping, filters/presets | Implemented; task/file tests and selected GUI flows pass |
 | Windows menus, editor, list, status, owned dialogs | Native controls implemented; remaining WPF metric/dialog differences |
 | Windows resize, maximize, taskbar minimize, restore | Native release smoke check passes; task text reflows when wrapping is enabled |
-| System tray, minimize-on-close, global Ctrl+Alt+M | Missing; distinct from ordinary taskbar minimization |
-| Full font family/style/color selection, filter suggestions, debug-logging option | Missing; current font-size setting and error log are available |
-| Printing and calendar | Partial alternatives: browser HTML and a two-week date list |
-| Original updater/donation and locale collation | Not reproduced |
+| Windows system tray, minimize-on-close, global Ctrl+Alt+M | Implemented; native minimize/restore/close/forced-exit and hotkey message routing pass; Linux integration remains |
+| Font selection, filter suggestions, debug logging | Windows native full font chooser; scrolling ten-field filter form with suggestions; portable size/effects/color and filter suggestions; optional action log |
+| Printing and calendar | Native Windows printer dialog; shared date/details HTML preview; title-bar calendar matches seven-day toggle; embedded preview/paper layout still differ |
+| Original updater/donation and locale collation | Updater/donation outstanding; Windows culture ordering implemented, Linux deterministic ordering retained |
 | Linux runtime, desktop integration, exact visual/interaction comparison | Still needs validation; portable frontend is present |
 
-Remaining parity work should start with tray/close/hotkey behavior, then the
-missing interaction/preferences details and a systematic comparison on both
-Windows and Linux. Deferred ideas in `BACKLOG.md` remain out of scope.
+Remaining parity work includes the embedded print preview, upstream updater and
+donation behavior adapted to the Rust application, portable font-family/weight
+selection, Linux tray/global hotkey integration, and systematic visual/runtime
+comparison on both platforms. Deferred ideas in `BACKLOG.md` remain out of scope.
 
 Implementation and validation status is recorded in `PROGRESS.md`. The working
 port implements the main task/file workflows, eight sorts, grouping, filters,
 presets, date/priority shortcuts, suggestions and configurable rendering.
 
-Known gaps: tray/minimize/global hotkey behavior, original updater/donation,
-full font selection, debug-logging preference, filter-field suggestions, portable Space acceptance of
-suggestions, and original embedded printing/calendar.
-Alphabetical collation is deterministic rather than culture-dependent. Blank
-lines and untouched whitespace are retained even when hidden. A changed source
+Known gaps: automatic updater/donation, embedded print preview and exact print
+layout, full portable font-family/weight selection, Linux tray/global hotkey and
+locale-dependent collation, desktop theming and exact WPF metrics.
+Blank lines and untouched whitespace are retained even when hidden. A changed source
 refuses writes instead of silently reloading and matching raw task strings.
 See the root README for actual feature details and recovery instructions.
 
@@ -73,3 +73,10 @@ optional Windows fallback. Preferences and task/file logic are shared. Win32
 metrics and wrapping differ from WPF; Linux widgets are not desktop themed.
 Visual parity must be compared against captured host screenshots, not assumed
 from source alone.
+
+Windows-specific validation: the smoke script opens/cancels the real font and
+printer dialogs, accepts a filter suggestion with Space, persists tray/font/log
+preferences, minimizes to the tray, restores through the icon callback, closes
+to the tray, restores through WM_HOTKEY, and exits through File > Exit. This
+verifies hotkey routing; injected message checks alone do not prove physical
+shortcut delivery, Explorer-restart recovery, or physical printer output.

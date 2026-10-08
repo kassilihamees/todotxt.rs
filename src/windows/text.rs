@@ -58,7 +58,7 @@ pub(super) unsafe fn prepare(
                 width: measured + scale(dpi, 6),
                 header: true,
                 completed: false,
-                color: 0,
+                color: model.settings.font_color,
                 alternate: false,
                 line_height,
             });
@@ -152,7 +152,7 @@ pub(super) unsafe fn prepare(
         } else if parse_date(&task.due_date) == Some(model.date) {
             0x00008000
         } else {
-            0
+            model.settings.font_color
         };
         rows.push(PaintRow {
             raw: task.raw.clone(),

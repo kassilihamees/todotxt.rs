@@ -1,5 +1,44 @@
 # Progress
 
+## Remaining Windows parity work (2026-10-09)
+
+- Added native tray icon/context Exit, double-click show/hide, minimize-on-close,
+  and optional Ctrl+Alt+M registration. Tray setup failures retain an accessible
+  window; hotkey conflicts show an error while retaining tray use. Handle Explorer
+  restarts by recreating the icon and restoring the window if recovery fails.
+- Added the native Windows font chooser and persisted family, weight, italic,
+  underline, strikeout, size and color. Native GDI task/group rendering uses the
+  chosen font; completion/due/link colors retain upstream behavior.
+- Replaced the tabbed filter dialog with a scrolling Active + nine-preset form.
+  Added priority/project/context suggestions in native and portable filter fields.
+  Portable task suggestions now also accept Space. The portable Options dialog
+  supports font effects/color and the debug-logging preference.
+- Added opt-in action logging without task, draft, filter or path contents;
+  existing error logging remains available and may include paths in errors.
+- Matched the seven-day title-bar calendar toggle in both frontends and the
+  Windows task-list Right Shift binding.
+- Added a native Windows printer chooser, GDI date/details table output and
+  separate Ctrl+Shift+P preview command. Shared HTML output now reproduces the
+  original date/details columns, group headers and colored metadata, safely
+  escaping task text. Embedded preview and exact paper layout still differ.
+- Windows raw/project/context sorting uses user-locale NLS comparison, matching
+  the original .NET Framework culture behavior. Linux ordering remains deterministic.
+- Regression coverage includes backward-compatible settings, font/tray setting
+  round trips, log content boundaries, printable dates/groups/escaping, portable
+  Space completion, and the expanded native Windows smoke checks.
+- Native smoke passed the original file-safety/resize flows plus scrolling filter
+  suggestions, font/printer cancellation, saved preferences, tray minimize,
+  callback restore, close-to-tray, hotkey-message restore, title-bar calendar and
+  forced File Exit. Physical printing and physical hotkey delivery are not claimed.
+- Final validation passed: format check; 19 task/file/settings/printing regression
+  tests in an isolated Cargo target directory; seven portable GUI event tests;
+  strict Clippy for native and optional portable builds; optimized native release
+  build and expanded release smoke checks. The release is available at
+  `target/parity/release/todotxt-rs.exe`; the ordinary output was locked by a
+  running application, which was left in place.
+- GitHub-hosted CI did not start; Linux build/runtime validation is still pending.
+  No deferred backlog feature was implemented. Full parity is not claimed.
+
 ## Fresh repository preparation (2026-10-08)
 
 - The owner deleted the previous GitHub repository after its old commit URLs

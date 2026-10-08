@@ -53,3 +53,74 @@ fn native_and_portable_preferences_use_the_same_schema() {
     model.preset(3).unwrap();
     assert_eq!(model.settings.filter, "+work\n-DONE");
 }
+
+#[test]
+fn old_preferences_keep_safe_defaults_and_new_preferences_round_trip() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("settings.json"),
+        r#"{"font_size":12,"word_wrap":true}"#,
+    )
+    .unwrap();
+    let mut settings = Settings::read(dir.path()).unwrap();
+    assert!(!settings.minimize_to_tray);
+    assert!(!settings.minimize_on_close);
+    assert!(!settings.debug_logging);
+    assert_eq!(settings.font_family, "Segoe UI");
+    settings.font_family = "Consolas".into();
+    settings.font_size = 18.0;
+    settings.font_weight = 700;
+    settings.font_italic = true;
+    settings.font_underline = true;
+    settings.font_strike = true;
+    settings.font_color = 0x123456;
+    settings.minimize_to_tray = true;
+    settings.minimize_on_close = true;
+    settings.debug_logging = true;
+    settings.save(dir.path()).unwrap();
+    let restored = Settings::read(dir.path()).unwrap();
+    assert_eq!(
+        serde_json::to_value(&settings).unwrap(),
+        serde_json::to_value(&restored).unwrap()
+    );
+}
+
+#[test]
+fn debug_logging_is_optional_and_does_not_include_task_data() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut model = Model::new(None, Some(dir.path().into()), true);
+    model.draft = "Fictional private draft marker".into();
+    model.settings.filter = "Fictional private filter marker".into();
+    model.debug_event("command 102");
+    assert!(!dir.path().join("error.log").exists());
+    model.settings.debug_logging = true;
+    model.debug_event("command 102");
+    let log = fs::read_to_string(dir.path().join("error.log")).unwrap();
+    assert!(log.contains("DEBUG command 102"));
+    assert!(!log.contains(&model.draft));
+    assert!(!log.contains(&model.settings.filter));
+    assert!(!log.contains("todo.txt"));
+}
+
+#[test]
+fn printable_table_has_dates_groups_escaped_details_and_one_copy_of_each_tag() {
+    let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 8).unwrap();
+    let task = todotxt_rs::task::Task::parse(
+        "(A) 2026-01-01 Review <fictional> & sample +demo @desk due:2026-10-08",
+        date,
+    );
+    let tasks = vec![(0, task)];
+    let rows = vec![
+        todotxt_rs::view::Row::Header("<group>".into()),
+        todotxt_rs::view::Row::Task(0),
+    ];
+    let html = todotxt_rs::printing::html(&tasks, &rows);
+    assert!(html.contains("<th>Done</th><th>Created</th><th>Due</th><th>Details</th>"));
+    assert!(html.contains("&lt;group&gt;"));
+    assert!(html.contains("&lt;fictional&gt; &amp; sample"));
+    assert!(html.contains("class='created'>2026-01-01"));
+    assert!(html.contains("class='due'>2026-10-08"));
+    assert_eq!(html.matches("+demo").count(), 1);
+    assert_eq!(html.matches("@desk").count(), 1);
+    assert!(!html.contains("<fictional>"));
+}

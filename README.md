@@ -85,9 +85,9 @@ cargo run --locked -- --demo --config-dir .local/my-profile
 - Alternating rows, completed-task fading/strikethrough, green due-today tasks,
   red overdue tasks, clickable blue URLs, optional wrapping, and status counts.
 - Manual/automatic archiving, optional creation dates, Ctrl-Enter mode,
-  automatic refresh, font size, grouping, wrapping, and status-bar preferences.
+  automatic refresh, font appearance, grouping, wrapping, status-bar and debug-log preferences.
 - Persistent file/preferences and window size/position; error log, help,
-  calendar, and browser-based printable HTML.
+  title-bar calendar and printable date/details tables. Windows also has tray mode and a native printer dialog.
 
 Completion follows the original: it removes priority and prefixes
 `x YYYY-MM-DD`. Reopening a completed task removes completion/date and does not
@@ -121,7 +121,10 @@ then Enter saves the task.
 | Shift threshold date ±1 day | Ctrl+Up or Down |
 | Remove due / threshold date | Ctrl+Alt+Left or Right / Ctrl+Left or Right |
 | Sort file/alphabetical/completed/context/due/created/priority/project | Ctrl+0–7 |
-| Options / help / print preview | F10 / ? / Ctrl+P |
+| Options / help | F10 / ? |
+| Print / print preview (Windows) | Ctrl+P / Ctrl+Shift+P |
+| Toggle title-bar calendar (Windows task list) | Right Shift |
+| Restore/minimize window (Windows tray mode) | Ctrl+Alt+M |
 
 ## Filters
 
@@ -212,16 +215,32 @@ Task wrapping and font rasterization can differ from WPF. Linux uses egui with
 installed Noto Sans or DejaVu Sans, then embedded fonts; portable task dialogs
 remain inside the main window. Linux widgets do not yet follow a desktop theme.
 
-System tray integration, minimize-on-close, the global Ctrl+Alt+M shortcut,
-automatic application updates, donation menu, full font-family/color/style
-selection, the debug-logging preference, and the temporary title-bar calendar
-are not implemented. Calendar
-currently opens a two-week date list. Printing opens HTML in your browser rather
-than the original embedded preview. Filters have text fields without completion
-popups. Windows accepts task completion suggestions with Tab, Enter, or Space;
-the portable frontend accepts Tab/Enter.
-Alphabetical sorting uses deterministic lowercase string comparison rather than
-.NET's locale-dependent collation. Some malformed-text parsing quirks are not
+Windows tray mode, minimize-on-close, Ctrl+Alt+M, full native font selection,
+filter-field suggestions, and the optional debug log are implemented. Enable
+tray mode in Options; close-to-tray applies only while its icon is available.
+Double-click the icon or press Ctrl+Alt+M to restore. File > Exit or the tray's
+Exit always quits. A shortcut already owned by todotxt.net or another program
+produces a visible error; the tray remains usable. The icon is recreated after
+Explorer restarts, with window restoration if that fails.
+
+The calendar toggles seven dates in the title bar. Both frontends accept task
+and filter suggestions with Tab, Enter, or Space. Windows uses the native font
+chooser for family, weight/style, size, color, underline and strikeout; portable
+Options supports size, color, italic, underline and strikeout, with system font
+fallbacks. Debug logging records action names/IDs rather than tasks, drafts,
+filters or paths; error messages can still include file paths.
+
+Windows Ctrl+P opens the native printer dialog and prints the visible sorted,
+filtered, grouped tasks in a Done/Created/Due/Details table. Ctrl+Shift+P opens
+HTML preview in the browser. Linux uses the same printable HTML table. The
+original embedded preview and exact paper layout are still different. Printer
+cancellation was exercised; physical printing has not been validated.
+
+Automatic application updates, the original donation menu, Linux tray/global
+hotkey integration and full portable font-family selection remain outstanding.
+Windows alphabetical/project/context ordering now uses the user's Windows
+locale; Linux retains deterministic lowercase ordering.
+Some malformed-text parsing quirks are not
 intentionally reproduced.
 
 ## Verification and project layout
@@ -238,8 +257,8 @@ archive behavior and refused external writes. GUI event tests exercise add/edit,
 completion, delete confirmation/cancellation, suggestions, preserved drafts,
 reload safety, and status rendering (`cargo test --features portable-ui` on
 Windows). `scripts/smoke-windows.ps1` exercises actual Win32 controls, editor
-Enter/save, task completion, native dialog Enter, owned Options, and external
-change refusal with retained drafts against a private sample copy, and captures
+Enter/save, task completion, native dialog Enter, owned Options/font dialogs, filter suggestions, printer cancellation, tray
+minimize/restore/close, calendar, and external change refusal with retained drafts against an isolated fictional fixture copy, and captures
 a screenshot. It also verifies width/height reflow, maximize, taskbar minimize,
 and restore. See [the parity assessment](docs/PARITY.md) for remaining work.
 Linux CI is configured; a Linux desktop

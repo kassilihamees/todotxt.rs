@@ -30,6 +30,15 @@ pub struct Settings {
     pub focus_list: bool,
     pub preserve_blank: bool,
     pub font_size: f32,
+    pub font_family: String,
+    pub font_weight: i32,
+    pub font_italic: bool,
+    pub font_underline: bool,
+    pub font_strike: bool,
+    pub font_color: u32,
+    pub minimize_to_tray: bool,
+    pub minimize_on_close: bool,
+    pub debug_logging: bool,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -55,6 +64,15 @@ impl Default for Settings {
             focus_list: true,
             preserve_blank: false,
             font_size: 12.0,
+            font_family: "Segoe UI".into(),
+            font_weight: 400,
+            font_italic: false,
+            font_underline: false,
+            font_strike: false,
+            font_color: 0,
+            minimize_to_tray: false,
+            minimize_on_close: false,
+            debug_logging: false,
         }
     }
 }
@@ -71,12 +89,30 @@ impl Settings {
             Ok(bytes) => {
                 let mut settings: Self =
                     serde_json::from_slice(&bytes).map_err(io::Error::other)?;
-                settings.font_size = settings.font_size.clamp(8.0, 30.0);
+                settings.font_size = settings.font_size.clamp(8.0, 96.0);
+                settings.font_weight = settings.font_weight.clamp(100, 900);
+                settings.font_color &= 0x00ffffff;
+                if settings.font_family.trim().is_empty() {
+                    settings.font_family = "Segoe UI".into();
+                }
                 settings.active_preset = settings.active_preset.min(9);
                 Ok(settings)
             }
             Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Self::default()),
             Err(e) => Err(e),
+        }
+    }
+    pub fn debug_event(&self, directory: &Path, event: &str) {
+        if self.debug_logging {
+            use std::io::Write;
+            if fs::create_dir_all(directory).is_ok()
+                && let Ok(mut file) = fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(directory.join("error.log"))
+            {
+                let _ = writeln!(file, "{} DEBUG {event}", chrono::Local::now().to_rfc3339());
+            }
         }
     }
     pub fn save(&self, directory: &Path) -> io::Result<()> {

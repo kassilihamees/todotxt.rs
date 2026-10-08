@@ -9,6 +9,7 @@ public class TodoPreview {
     [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out Rect r);
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out Rect r);
     [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int width, int height, uint flags);
+    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
     [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
     [DllImport("user32.dll")] public static extern bool IsZoomed(IntPtr h);
     public static int Width(IntPtr h) { Rect r; GetClientRect(h, out r); return r.Right; }
@@ -27,6 +28,16 @@ public class TodoPreview {
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr SendMessage(IntPtr h, uint m, IntPtr w, System.Text.StringBuilder text);
     [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, System.Text.StringBuilder text, int count);
+    public static IntPtr FindPopup(int process) {
+        IntPtr found = IntPtr.Zero;
+        EnumWindows((h, p) => {
+            uint id; GetWindowThreadProcessId(h, out id);
+            var name = new System.Text.StringBuilder(100); GetClassName(h, name, 100);
+            if (id == process && IsWindowVisible(h) && name.ToString() != "TodoTxtRustNative") { found = h; return false; }
+            return true;
+        }, IntPtr.Zero);
+        return found;
+    }
     public static IntPtr FindRoot(int process) {
         IntPtr found = IntPtr.Zero;
         EnumWindows((h, p) => {
@@ -114,6 +125,73 @@ try {
     }
     [void][TodoPreview]::PostMessage($dialog, 0x111, [IntPtr]2, [IntPtr]::Zero)
     Await-Condition { ![TodoPreview]::IsWindow($dialog) } 'Options did not close.'
+    Write-Output "PASS: original native smoke flows. Starting filter form checks."
+    # Filter fields and suggestions operate on the actual native controls.
+    [void][TodoPreview]::PostMessage($root, 0x111, [IntPtr]111, [IntPtr]::Zero)
+    Await-Condition { [TodoPreview]::GetDlgItem([TodoPreview]::GetWindow($root, 6), 102) -ne [IntPtr]::Zero } 'Filter form did not appear.'
+    $dialog = [TodoPreview]::GetWindow($root, 6)
+    $panel = [TodoPreview]::GetDlgItem($dialog, 102)
+    $filter = [TodoPreview]::GetDlgItem($panel, 600)
+    if ([TodoPreview]::GetDlgItem($panel, 609) -eq [IntPtr]::Zero) { throw 'Filter preset 9 is missing.' }
+    [void][TodoPreview]::SendMessage($filter, 0xC, [IntPtr]::Zero, '+de')
+    [void][TodoPreview]::SendMessage($filter, 0xB1, [IntPtr]3, [IntPtr]3)
+    # Explicit change notification after caret placement (WM_SETTEXT can notify before updating it).
+    [void][TodoPreview]::SendMessage($dialog, 0x111, [IntPtr](600 + (0x300 -shl 16)), $filter)
+    $suggestions = [TodoPreview]::GetDlgItem($dialog, 109)
+    Await-Condition { [TodoPreview]::IsWindowVisible($suggestions) } 'Filter suggestions did not appear.'
+    [void][TodoPreview]::PostMessage($filter, 0x100, [IntPtr]32, [IntPtr]::Zero)
+    Await-Condition { ![TodoPreview]::IsWindowVisible($suggestions) } 'Space did not accept the filter suggestion.'
+    $filterText = [Text.StringBuilder]::new(100)
+    [void][TodoPreview]::SendMessage($filter, 0xD, [IntPtr]$filterText.Capacity, $filterText)
+    if ($filterText.ToString() -ne '+demo') { throw 'Filter completion inserted the wrong tag.' }
+    [void][TodoPreview]::SendMessage($panel, 0x115, [IntPtr]7, [IntPtr]::Zero)
+    [void][TodoPreview]::SendMessage([TodoPreview]::GetDlgItem($panel, 609), 0xC, [IntPtr]::Zero, '-DONE')
+    [void][TodoPreview]::PostMessage($dialog, 0x111, [IntPtr]1, [IntPtr]::Zero)
+    Await-Condition { ![TodoPreview]::IsWindow($dialog) } 'Filter OK did not close.'
+    Await-Condition { $filters = Get-Content (Join-Path $previewProfileDirectory 'settings.json') -Raw | ConvertFrom-Json; $filters.filter -eq '+demo' -and $filters.presets[8] -eq '-DONE' } 'Active filter and preset 9 did not save.'
+    [void][TodoPreview]::SendMessage($root, 0x111, [IntPtr]400, [IntPtr]::Zero)
+    Write-Output "PASS: filter suggestions, scrolling and saved preset 9. Starting printer checks."
+    # A printer dialog can be opened/cancelled without submitting a print job.
+    [void][TodoPreview]::PostMessage($root, 0x111, [IntPtr]113, [IntPtr]::Zero)
+    Await-Condition { (Control-Class ([TodoPreview]::GetWindow($root, 6))) -eq '#32770' } 'Native print dialog did not appear.'
+    $printDialog = [TodoPreview]::GetWindow($root, 6)
+    [void][TodoPreview]::PostMessage($printDialog, 0x111, [IntPtr]2, [IntPtr]::Zero)
+    Await-Condition { ![TodoPreview]::IsWindow($printDialog) } 'Print dialog Cancel did not close.'
+    Write-Output "PASS: printer cancellation. Starting font and tray checks."
+    # Font chooser, settings persistence, tray minimize/restore, close-to-tray and forced Exit.
+    [void][TodoPreview]::PostMessage($root, 0x111, [IntPtr]110, [IntPtr]::Zero)
+    Await-Condition { [TodoPreview]::GetDlgItem([TodoPreview]::GetWindow($root, 6), 108) -ne [IntPtr]::Zero } 'Font chooser button is missing.'
+    $dialog = [TodoPreview]::GetWindow($root, 6)
+    [void][TodoPreview]::PostMessage($dialog, 0x111, [IntPtr]108, [IntPtr]::Zero)
+    Await-Condition { (Control-Class ([TodoPreview]::GetWindow($dialog, 6))) -eq '#32770' } 'Native font dialog did not appear.'
+    $fontDialog = [TodoPreview]::GetWindow($dialog, 6)
+    [void][TodoPreview]::PostMessage($fontDialog, 0x111, [IntPtr]2, [IntPtr]::Zero)
+    Await-Condition { ![TodoPreview]::IsWindow($fontDialog) } 'Font dialog Cancel did not close.'
+    [void][TodoPreview]::SendMessage([TodoPreview]::GetDlgItem($dialog, 107), 0xC, [IntPtr]::Zero, '16')
+    foreach ($id in 212, 213, 214) { [void][TodoPreview]::SendMessage([TodoPreview]::GetDlgItem($dialog, $id), 0xF1, [IntPtr]1, [IntPtr]::Zero) }
+    [void][TodoPreview]::PostMessage($dialog, 0x111, [IntPtr]1, [IntPtr]::Zero)
+    Await-Condition { ![TodoPreview]::IsWindow($dialog) } 'Options OK did not close.'
+    Await-Condition {
+        $saved = Get-Content (Join-Path $previewProfileDirectory 'settings.json') -Raw | ConvertFrom-Json
+        $saved.minimize_to_tray -and $saved.minimize_on_close -and $saved.debug_logging -and $saved.font_size -eq 16
+    } 'Native preferences did not persist.'
+    Start-Sleep -Milliseconds 250
+    # The running original may own Ctrl+Alt+M; this must surface an error without disabling the tray.
+    $popup = [TodoPreview]::FindPopup($process.Id)
+    if ((Control-Class $popup) -eq '#32770') { [void][TodoPreview]::PostMessage($popup, 0x10, [IntPtr]::Zero, [IntPtr]::Zero); Await-Condition { ![TodoPreview]::IsWindow($popup) } 'Hotkey conflict error did not close.' }
+    [void][TodoPreview]::SendMessage($root, 0x112, [IntPtr]0xF020, [IntPtr]::Zero)
+    Await-Condition { [TodoPreview]::IsIconic($root) -and ![TodoPreview]::IsWindowVisible($root) } 'Tray minimization did not hide the taskbar window.'
+    [void][TodoPreview]::PostMessage($root, 0x8002, [IntPtr]1, [IntPtr]0x203)
+    Await-Condition { [TodoPreview]::IsWindowVisible($root) -and ![TodoPreview]::IsIconic($root) } 'Tray double-click did not restore the window.'
+    [void][TodoPreview]::PostMessage($root, 0x10, [IntPtr]::Zero, [IntPtr]::Zero)
+    Await-Condition { ![TodoPreview]::IsWindowVisible($root) -and !$process.HasExited } 'Close-to-tray did not retain the application.'
+    [void][TodoPreview]::PostMessage($root, 0x312, [IntPtr]1, [IntPtr]::Zero)
+    Await-Condition { [TodoPreview]::IsWindowVisible($root) } 'Global hotkey message did not restore the window.'
+    [void][TodoPreview]::PostMessage($root, 0x111, [IntPtr]134, [IntPtr]::Zero)
+    $title = [Text.StringBuilder]::new(300)
+    Await-Condition { [void][TodoPreview]::GetWindowText($root, $title, $title.Capacity); $title.ToString().Contains('Calendar:') } 'Calendar did not update the title.'
+    [void][TodoPreview]::PostMessage($root, 0x111, [IntPtr]134, [IntPtr]::Zero)
+    Await-Condition { [void][TodoPreview]::GetWindowText($root, $title, $title.Capacity); $title.ToString() -eq 'todotxt.rs' } 'Calendar did not toggle off.'
     # External edits must trigger a visible native error and preserve the draft.
     [void][TodoPreview]::SendMessage($root, 0x111, [IntPtr]102, [IntPtr]::Zero)
     [void][TodoPreview]::SendMessage($editor, 0xC, [IntPtr]::Zero, 'Retained native draft')
@@ -129,18 +207,24 @@ try {
     [void][TodoPreview]::PostMessage($errorDialog, 0x10, [IntPtr]::Zero, [IntPtr]::Zero)
     Await-Condition { ![TodoPreview]::IsWindow($errorDialog) } 'Error dialog did not close.'
     if ($process.HasExited) { throw 'Application exited unexpectedly.' }
-    Write-Output 'PASS: native controls, width/height reflow, maximize/minimize/restore, Enter/save, completion, dialog Enter, Options, external-change refusal/draft preservation, and screenshot.'
+    $log = [IO.File]::ReadAllText((Join-Path $previewProfileDirectory 'error.log'))
+    if (!$log.Contains('DEBUG command 134') -or $log.Contains('Retained native draft')) { throw 'Debug events are missing or include draft text.' }
+    [void][TodoPreview]::PostMessage($root, 0x111, [IntPtr]133, [IntPtr]::Zero)
+    Await-Condition { $process.HasExited } 'File Exit did not quit with minimize-on-close enabled.'
+    Write-Output 'PASS: native controls, width/height reflow, maximize/minimize/restore, Enter/save, completion, dialog Enter, Options/font dialog, filter suggestions, printer cancellation, tray minimize/restore/close, hotkey routing, calendar, debug logging, forced Exit, external-change refusal/draft preservation, and screenshot.'
 }
+catch { Write-Output ("SMOKE FAILED: " + $_.Exception.Message); throw }
 finally {
     $process.Refresh()
     if (!$process.HasExited) {
         $root = [TodoPreview]::FindRoot($process.Id)
-        $popup = [TodoPreview]::GetWindow($root, 6)
-        if ($popup -ne $root -and $popup -ne [IntPtr]::Zero) {
+        for ($cleanupAttempt = 0; $cleanupAttempt -lt 4; $cleanupAttempt++) {
+            $popup = [TodoPreview]::FindPopup($process.Id)
+            if ($popup -eq [IntPtr]::Zero) { break }
             [void][TodoPreview]::PostMessage($popup, 0x10, [IntPtr]::Zero, [IntPtr]::Zero)
-            Start-Sleep -Milliseconds 100
+            Start-Sleep -Milliseconds 200
         }
-        [void][TodoPreview]::PostMessage([TodoPreview]::FindRoot($process.Id), 0x10, [IntPtr]::Zero, [IntPtr]::Zero)
-        if (!$process.WaitForExit(5000)) { throw 'Preview did not exit after WM_CLOSE.' }
+        [void][TodoPreview]::PostMessage([TodoPreview]::FindRoot($process.Id), 0x111, [IntPtr]133, [IntPtr]::Zero)
+        if (!$process.WaitForExit(5000)) { Write-Warning 'Isolated preview could not exit through File Exit; stopping this test process.'; $process.Kill() }
     }
 }

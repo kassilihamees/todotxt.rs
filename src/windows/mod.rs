@@ -2,6 +2,8 @@
 //! state and immutable drawing snapshots have separate RefCells for Win32 reentry.
 #![allow(unsafe_op_in_unsafe_fn)]
 mod dialogs;
+mod printing;
+mod shell;
 mod text;
 
 use chrono::{Duration, Local};
@@ -70,6 +72,7 @@ const SHOW_HIDDEN: u16 = 132;
 const EXIT: u16 = 133;
 const CALENDAR: u16 = 134;
 const LOG: u16 = 135;
+const PRINT_PREVIEW: u16 = 136;
 const EDIT_ID: usize = 10;
 const LIST_ID: usize = 11;
 const SUGGEST_ID: usize = 12;
@@ -127,6 +130,29 @@ unsafe fn font(dpi: u32, pixels: f32, weight: i32, strike: bool, underline: bool
     lf.lfFaceName[..name.len()].copy_from_slice(&name);
     CreateFontIndirectW(&lf)
 }
+unsafe fn task_font(
+    dpi: u32,
+    settings: &todotxt_rs::settings::Settings,
+    bold: bool,
+    strike: bool,
+    link: bool,
+) -> HFONT {
+    let mut lf: LOGFONTW = zeroed();
+    lf.lfHeight = -(settings.font_size * dpi as f32 / 96.0).round() as i32;
+    lf.lfWeight = if bold {
+        settings.font_weight.max(700)
+    } else {
+        settings.font_weight
+    };
+    lf.lfItalic = settings.font_italic as u8;
+    lf.lfStrikeOut = (strike || settings.font_strike) as u8;
+    lf.lfUnderline = (link || settings.font_underline) as u8;
+    lf.lfCharSet = DEFAULT_CHARSET;
+    lf.lfQuality = CLEARTYPE_QUALITY;
+    let name: Vec<u16> = settings.font_family.encode_utf16().take(31).collect();
+    lf.lfFaceName[..name.len()].copy_from_slice(&name);
+    CreateFontIndirectW(&lf)
+}
 #[derive(Default)]
 struct Paint {
     rows: Vec<text::PaintRow>,
@@ -152,6 +178,9 @@ struct Native {
     suggestions_dismissed: bool,
     last_width: i32,
     suppress_edit: bool,
+    shell: shell::Integration,
+    exiting: bool,
+    calendar: bool,
 }
 struct WindowData {
     app: RefCell<Native>,
@@ -177,10 +206,13 @@ pub fn run(path: Option<PathBuf>, config: Option<PathBuf>, demo: bool) -> io::Re
             if result == -1 {
                 return Err(io::Error::last_os_error());
             }
+            let key = if msg.wParam == VK_SHIFT as usize && (msg.lParam >> 16) & 0xff == 0x36 {
+                VK_RSHIFT
+            } else {
+                msg.wParam as u16
+            };
             let handled = if msg.message == WM_KEYDOWN {
-                data.app
-                    .borrow_mut()
-                    .key(msg.hwnd, msg.wParam as u16, &data)
+                data.app.borrow_mut().key(msg.hwnd, key, &data)
             } else {
                 false
             };
@@ -228,6 +260,9 @@ unsafe fn create(model: Model) -> io::Result<Box<WindowData>> {
             suggestions_dismissed: false,
             last_width: 0,
             suppress_edit: false,
+            shell: shell::Integration::default(),
+            exiting: false,
+            calendar: false,
         }),
         paint: RefCell::new(Paint::default()),
     });
@@ -309,6 +344,10 @@ unsafe fn create(model: Model) -> io::Result<Box<WindowData>> {
         app.rebuild(&data);
         SetFocus(app.list);
         SetTimer(hwnd, 1, 1000, None);
+        let tray_enabled = app.model.settings.minimize_to_tray;
+        if let Err(error) = app.shell.configure(hwnd, tray_enabled) {
+            app.model.startup_error = Some(error.to_string());
+        }
     }
     Ok(data)
 }
@@ -356,11 +395,40 @@ unsafe extern "system" fn window_proc(
         _ => {}
     }
     let Ok(mut app) = data.app.try_borrow_mut() else {
+        if message == WM_SIZE {
+            PostMessageW(hwnd, shell::RELAYOUT, 0, 0);
+        }
         return DefWindowProcW(hwnd, message, wparam, lparam);
     };
+    if message == app.shell.explorer_restart && message != 0 {
+        app.shell.recreate_icon();
+        return 0;
+    }
     match message {
+        shell::RELAYOUT => {
+            if IsIconic(hwnd) == 0 {
+                app.layout(data);
+                app.rebuild(data);
+            }
+            return 0;
+        }
+        shell::TRAY_MESSAGE => {
+            match lparam as u32 {
+                WM_LBUTTONDBLCLK => app.shell.toggle(),
+                WM_RBUTTONUP | WM_CONTEXTMENU => app.shell.popup(),
+                _ => {}
+            }
+            return 0;
+        }
+        WM_HOTKEY if wparam == shell::HOTKEY_ID as usize => {
+            app.shell.toggle();
+            return 0;
+        }
         WM_SIZE => {
             if wparam == SIZE_MINIMIZED as usize {
+                if app.shell.active {
+                    ShowWindow(hwnd, SW_HIDE);
+                }
                 return 0;
             }
             if !app.editor.is_null() {
@@ -440,6 +508,11 @@ unsafe extern "system" fn window_proc(
             return 0;
         }
         WM_CLOSE => {
+            if !app.exiting && app.shell.active && app.model.settings.minimize_on_close {
+                ShowWindow(hwnd, SW_MINIMIZE);
+                ShowWindow(hwnd, SW_HIDE);
+                return 0;
+            }
             app.save_geometry();
             if let Err(e) = app.model.save() {
                 app.report(e);
@@ -492,43 +565,14 @@ unsafe extern "system" fn list_proc(
 impl Native {
     unsafe fn create_fonts(&mut self) {
         let old = self.fonts;
+        let settings = &self.model.settings;
         self.fonts = [
             font(self.dpi, 12.0, FW_NORMAL as i32, false, false),
-            font(
-                self.dpi,
-                self.model.settings.font_size,
-                FW_NORMAL as i32,
-                false,
-                false,
-            ),
-            font(
-                self.dpi,
-                self.model.settings.font_size,
-                FW_BOLD as i32,
-                false,
-                false,
-            ),
-            font(
-                self.dpi,
-                self.model.settings.font_size,
-                FW_NORMAL as i32,
-                true,
-                false,
-            ),
-            font(
-                self.dpi,
-                self.model.settings.font_size,
-                FW_NORMAL as i32,
-                false,
-                true,
-            ),
-            font(
-                self.dpi,
-                self.model.settings.font_size,
-                FW_NORMAL as i32,
-                true,
-                true,
-            ),
+            task_font(self.dpi, settings, false, false, false),
+            task_font(self.dpi, settings, true, false, false),
+            task_font(self.dpi, settings, false, true, false),
+            task_font(self.dpi, settings, false, false, true),
+            task_font(self.dpi, settings, false, true, true),
         ];
         for control in [self.editor, self.status, self.suggestions] {
             if !control.is_null() {
@@ -776,6 +820,7 @@ impl Native {
         error_box(self.hwnd, &e.to_string());
     }
     unsafe fn execute(&mut self, id: u16, data: &WindowData) {
+        self.model.debug_event(&format!("command {id}"));
         if let Err(e) = self.command(id, data) {
             self.report(e);
         }
@@ -976,9 +1021,13 @@ impl Native {
                 self.rebuild(data);
             }
             FILTER => {
-                if let Some(settings) =
-                    dialogs::filters(self.hwnd, self.fonts[0], self.dpi, &self.model.settings)?
-                {
+                if let Some(settings) = dialogs::filters(
+                    self.hwnd,
+                    self.fonts[0],
+                    self.dpi,
+                    &self.model.settings,
+                    &self.model.tasks,
+                )? {
                     self.model.settings = settings;
                     self.model.settings.active_preset = 0;
                     self.model.refresh();
@@ -996,6 +1045,8 @@ impl Native {
                     self.create_fonts();
                     self.layout(data);
                     self.rebuild(data);
+                    self.shell
+                        .configure(self.hwnd, self.model.settings.minimize_to_tray)?;
                 }
             }
             HIDE_FUTURE | SHOW_HIDDEN => {
@@ -1059,25 +1110,26 @@ impl Native {
                 )?;
             }
             CALENDAR => {
-                let dates = (0..14)
-                    .map(|n| {
-                        (self.model.date + Duration::days(n))
-                            .format("%A  %Y-%m-%d")
-                            .to_string()
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\r\n");
-                dialogs::input(
-                    self.hwnd,
-                    self.fonts[0],
-                    self.dpi,
-                    "Calendar",
-                    "Next two weeks:",
-                    &dates,
-                    true,
-                )?;
+                self.calendar = !self.calendar;
+                let title = if self.calendar {
+                    let days = (0..7)
+                        .map(|n| {
+                            let date = Local::now().date_naive() + Duration::days(n);
+                            format!(
+                                "  {}:{}",
+                                &date.format("%A").to_string()[..2],
+                                date.format("%m-%d")
+                            )
+                        })
+                        .collect::<String>();
+                    format!("todotxt.rs       Calendar:  {days}")
+                } else {
+                    "todotxt.rs".into()
+                };
+                set_text(self.hwnd, &title);
             }
-            PRINT => {
+            PRINT => printing::print(self.hwnd, &self.model)?,
+            PRINT_PREVIEW => {
                 open::that(self.model.print_preview()?).map_err(io::Error::other)?;
             }
             LOG => {
@@ -1089,6 +1141,7 @@ impl Native {
                 open::that(path).map_err(io::Error::other)?;
             }
             EXIT => {
+                self.exiting = true;
                 PostMessageW(self.hwnd, WM_CLOSE, 0, 0);
             }
             n if (SORT_BASE..SORT_BASE + 8).contains(&n) => {
@@ -1224,7 +1277,7 @@ impl Native {
         } else if ctrl && !alt && key == b'N' as u16 {
             command = NEW_FILE;
         } else if ctrl && !alt && key == b'P' as u16 {
-            command = PRINT;
+            command = if shift { PRINT_PREVIEW } else { PRINT };
         } else if editor {
             if IsWindowVisible(self.suggestions) != 0
                 && matches!(
@@ -1340,6 +1393,7 @@ impl Native {
                 n if n == b'I' as u16 => PRIORITY,
                 n if n == b'S' as u16 => DUE,
                 n if n == b'P' as u16 => POSTPONE,
+                VK_RSHIFT => CALENDAR,
                 VK_OEM_PERIOD => RELOAD,
                 VK_OEM_2 if shift => HELP,
                 n if (b'0' as u16..=b'9' as u16).contains(&n) => PRESET_BASE + n - b'0' as u16,
@@ -1415,7 +1469,8 @@ unsafe fn make_menu() -> HMENU {
             vec![
                 (NEW_FILE, "&New\tCtrl+N".into()),
                 (OPEN, "&Open...\tCtrl+O".into()),
-                (PRINT, "&Print / Print Preview\tCtrl+P".into()),
+                (PRINT, "&Print\tCtrl+P".into()),
+                (PRINT_PREVIEW, "Print Pre&view\tCtrl+Shift+P".into()),
                 (0, "".into()),
                 (ARCHIVE, "&Archive Completed Tasks\tA".into()),
                 (RELOAD, "&Reload File\tF5".into()),
@@ -1497,7 +1552,7 @@ unsafe fn make_menu() -> HMENU {
             vec![
                 (HELP, "&About / Help\t?".into()),
                 (LOG, "View Error &Log".into()),
-                (CALENDAR, "Show &Calendar".into()),
+                (CALENDAR, "Show &Calendar\tRight Shift".into()),
             ],
         ),
     ];

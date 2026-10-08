@@ -128,9 +128,9 @@ impl Task {
                 contexts.push(tag);
             }
         }
-        projects.sort();
+        projects.sort_by(|a, b| crate::view::compare_text(a, b));
         projects.dedup();
-        contexts.sort();
+        contexts.sort_by(|a, b| crate::view::compare_text(a, b));
         contexts.dedup();
         if primary_project.is_none() {
             primary_project = projects.first().cloned();

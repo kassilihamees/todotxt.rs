@@ -51,29 +51,27 @@ impl Sort {
         let completed = || a.completed.cmp(&b.completed);
         match self {
             Self::File => Ordering::Equal,
-            Self::Alphabetical => a.raw.to_lowercase().cmp(&b.raw.to_lowercase()),
+            Self::Alphabetical => compare_text(&a.raw, &b.raw),
             Self::Completed => completed()
                 .then_with(priority)
                 .then_with(due)
                 .then_with(created),
-            Self::Context => a
-                .primary_context
-                .as_deref()
-                .unwrap_or("zzz")
-                .cmp(b.primary_context.as_deref().unwrap_or("zzz"))
-                .then_with(completed)
-                .then_with(priority)
-                .then_with(due)
-                .then_with(created),
-            Self::Project => a
-                .primary_project
-                .as_deref()
-                .unwrap_or("zzz")
-                .cmp(b.primary_project.as_deref().unwrap_or("zzz"))
-                .then_with(completed)
-                .then_with(priority)
-                .then_with(due)
-                .then_with(created),
+            Self::Context => compare_text(
+                a.primary_context.as_deref().unwrap_or("zzz"),
+                b.primary_context.as_deref().unwrap_or("zzz"),
+            )
+            .then_with(completed)
+            .then_with(priority)
+            .then_with(due)
+            .then_with(created),
+            Self::Project => compare_text(
+                a.primary_project.as_deref().unwrap_or("zzz"),
+                b.primary_project.as_deref().unwrap_or("zzz"),
+            )
+            .then_with(completed)
+            .then_with(priority)
+            .then_with(due)
+            .then_with(created),
             Self::Due => due()
                 .then_with(completed)
                 .then_with(priority)
@@ -104,6 +102,39 @@ impl Sort {
             value
         }]
     }
+}
+
+/// Match .NET Framework's current-culture string ordering on Windows.
+#[cfg(windows)]
+pub(crate) fn compare_text(a: &str, b: &str) -> Ordering {
+    use windows_sys::Win32::Globalization::{
+        CSTR_EQUAL, CSTR_GREATER_THAN, CSTR_LESS_THAN, CompareStringEx,
+    };
+    let a16: Vec<u16> = a.encode_utf16().collect();
+    let b16: Vec<u16> = b.encode_utf16().collect();
+    let result = unsafe {
+        CompareStringEx(
+            std::ptr::null(),
+            0,
+            a16.as_ptr(),
+            a16.len() as i32,
+            b16.as_ptr(),
+            b16.len() as i32,
+            std::ptr::null(),
+            std::ptr::null(),
+            0,
+        )
+    };
+    match result {
+        CSTR_LESS_THAN => Ordering::Less,
+        CSTR_EQUAL => Ordering::Equal,
+        CSTR_GREATER_THAN => Ordering::Greater,
+        _ => a.to_lowercase().cmp(&b.to_lowercase()),
+    }
+}
+#[cfg(not(windows))]
+pub(crate) fn compare_text(a: &str, b: &str) -> Ordering {
+    a.to_lowercase().cmp(&b.to_lowercase())
 }
 
 fn empty_last(s: &str) -> &str {

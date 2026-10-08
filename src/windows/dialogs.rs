@@ -76,7 +76,7 @@ enum Kind {
     },
     Filters {
         settings: Box<Settings>,
-        selected: usize,
+        tasks: Vec<(usize, Task)>,
     },
     Options(Box<Settings>),
 }
@@ -86,7 +86,14 @@ struct Dialog {
     font: HFONT,
     dpi: u32,
     edit: HWND,
-    tab: HWND,
+    panel: HWND,
+    filter_edits: Vec<HWND>,
+    filter_labels: Vec<HWND>,
+    scroll: i32,
+    suggestions: HWND,
+    tags: Vec<String>,
+    range: (usize, usize),
+    suggestion_index: usize,
     controls: Vec<HWND>,
     kind: Kind,
     result: Option<bool>,
@@ -96,8 +103,8 @@ impl Dialog {
         let (width, height) = match &self.kind {
             Kind::Input { readonly: true, .. } => (500, 450),
             Kind::Input { .. } => (390, 160),
-            Kind::Filters { .. } => (450, 300),
-            Kind::Options(_) => (510, 485),
+            Kind::Filters { .. } => (405, 600),
+            Kind::Options(_) => (510, 590),
         };
         let mut owner: RECT = zeroed();
         GetWindowRect(self.parent, &mut owner);
@@ -154,54 +161,84 @@ impl Dialog {
                 );
             }
             Kind::Filters { settings, .. } => {
-                self.tab = child(self.hwnd, WC_TABCONTROLW, "", WS_TABSTOP, 102, self.font);
-                for n in 0..10 {
-                    let mut name = wide(&if n == 0 {
-                        "Active".to_owned()
-                    } else {
-                        n.to_string()
-                    });
-                    let mut item = TCITEMW {
-                        mask: TCIF_TEXT,
-                        pszText: name.as_mut_ptr(),
-                        ..zeroed()
-                    };
-                    SendMessageW(
-                        self.tab,
-                        TCM_INSERTITEMW,
-                        n,
-                        &mut item as *mut TCITEMW as isize,
-                    );
-                }
-                MoveWindow(
-                    self.tab,
+                self.panel = CreateWindowExW(
+                    WS_EX_CONTROLPARENT,
+                    w!("TodoTxtRustFilterPanel"),
+                    w!(""),
+                    WS_CHILD | WS_VISIBLE | WS_VSCROLL,
                     scale(self.dpi, 12),
                     scale(self.dpi, 38),
                     scale(self.dpi, width - 40),
-                    scale(self.dpi, 185),
-                    1,
-                );
-                self.edit = child(
+                    scale(self.dpi, 430),
                     self.hwnd,
-                    w!("EDIT"),
-                    &settings.filter.replace('\n', "\r\n"),
-                    WS_BORDER
-                        | WS_TABSTOP
-                        | WS_VSCROLL
-                        | ES_MULTILINE as u32
-                        | ES_AUTOVSCROLL as u32
-                        | ES_WANTRETURN as u32,
-                    101,
+                    102usize as HMENU,
+                    GetModuleHandleW(null()),
+                    GetWindowLongPtrW(self.hwnd, GWLP_USERDATA) as *const _,
+                );
+                for n in 0..10 {
+                    let heading = if n == 0 {
+                        "Active Filter".into()
+                    } else {
+                        format!("Preset {n}")
+                    };
+                    let label = child(self.panel, w!("STATIC"), &heading, 0, 700 + n, self.font);
+                    let text = if n == 0 {
+                        &settings.filter
+                    } else {
+                        &settings.presets[n - 1]
+                    };
+                    let edit = child(
+                        self.panel,
+                        w!("EDIT"),
+                        &text.replace('\n', "\r\n"),
+                        WS_BORDER
+                            | WS_TABSTOP
+                            | WS_VSCROLL
+                            | ES_MULTILINE as u32
+                            | ES_AUTOVSCROLL as u32
+                            | ES_WANTRETURN as u32,
+                        600 + n,
+                        self.font,
+                    );
+                    MoveWindow(
+                        label,
+                        0,
+                        scale(self.dpi, n as i32 * 100),
+                        scale(self.dpi, width - 66),
+                        scale(self.dpi, 20),
+                        1,
+                    );
+                    MoveWindow(
+                        edit,
+                        0,
+                        scale(self.dpi, n as i32 * 100 + 22),
+                        scale(self.dpi, width - 66),
+                        scale(self.dpi, 70),
+                        1,
+                    );
+                    self.filter_labels.push(label);
+                    self.filter_edits.push(edit);
+                }
+                self.edit = self.filter_edits[0];
+                let info = SCROLLINFO {
+                    cbSize: size_of::<SCROLLINFO>() as u32,
+                    fMask: SIF_RANGE | SIF_PAGE | SIF_POS,
+                    nMin: 0,
+                    nMax: scale(self.dpi, 1000) - 1,
+                    nPage: scale(self.dpi, 430) as u32,
+                    nPos: 0,
+                    ..zeroed()
+                };
+                SetScrollInfo(self.panel, SB_VERT, &info, 1);
+                self.suggestions = child(
+                    self.hwnd,
+                    w!("LISTBOX"),
+                    "",
+                    WS_BORDER | WS_VSCROLL | LBS_NOTIFY as u32,
+                    109,
                     self.font,
                 );
-                MoveWindow(
-                    self.edit,
-                    scale(self.dpi, 20),
-                    scale(self.dpi, 70),
-                    scale(self.dpi, width - 56),
-                    scale(self.dpi, 144),
-                    1,
-                );
+                ShowWindow(self.suggestions, SW_HIDE);
                 let clear = child(
                     self.hwnd,
                     w!("BUTTON"),
@@ -210,7 +247,7 @@ impl Dialog {
                     103,
                     self.font,
                 );
-                self.place(clear, 12, height - 70, 95, 25);
+                self.place(clear, 12, height - 70, 88, 25);
                 let clear_all = child(
                     self.hwnd,
                     w!("BUTTON"),
@@ -219,7 +256,7 @@ impl Dialog {
                     104,
                     self.font,
                 );
-                self.place(clear_all, 114, height - 70, 80, 25);
+                self.place(clear_all, 104, height - 70, 78, 25);
             }
             Kind::Options(s) => {
                 self.edit = child(
@@ -282,6 +319,12 @@ impl Dialog {
                     ),
                     (s.word_wrap, "Apply word wrap to task list"),
                     (s.status_bar, "Display status bar"),
+                    (s.minimize_to_tray, "Minimize to system tray (Ctrl+Alt+M)"),
+                    (
+                        s.minimize_on_close,
+                        "Minimize on close when tray mode is enabled",
+                    ),
+                    (s.debug_logging, "Enable debug logging"),
                 ];
                 for (n, (checked, label)) in checks.iter().enumerate() {
                     let control = child(
@@ -316,7 +359,7 @@ impl Dialog {
                 MoveWindow(
                     label,
                     scale(self.dpi, 12),
-                    scale(self.dpi, 365),
+                    scale(self.dpi, 445),
                     scale(self.dpi, 90),
                     scale(self.dpi, 23),
                     1,
@@ -332,12 +375,28 @@ impl Dialog {
                 MoveWindow(
                     size,
                     scale(self.dpi, 108),
-                    scale(self.dpi, 365),
+                    scale(self.dpi, 445),
                     scale(self.dpi, 70),
                     scale(self.dpi, 23),
                     1,
                 );
                 self.controls.push(size);
+                let chooser = child(
+                    self.hwnd,
+                    w!("BUTTON"),
+                    "Select Font...",
+                    WS_TABSTOP | BS_PUSHBUTTON as u32,
+                    108,
+                    self.font,
+                );
+                MoveWindow(
+                    chooser,
+                    scale(self.dpi, 200),
+                    scale(self.dpi, 445),
+                    scale(self.dpi, 120),
+                    scale(self.dpi, 25),
+                    1,
+                );
             }
         }
         let ok = child(
@@ -372,14 +431,119 @@ impl Dialog {
         );
     }
     unsafe fn store_filter(&mut self) {
-        if let Kind::Filters { settings, selected } = &mut self.kind {
-            let text = window_text(self.edit).replace("\r\n", "\n");
-            if *selected == 0 {
-                settings.filter = text;
-            } else {
-                settings.presets[*selected - 1] = text;
+        if let Kind::Filters { settings, .. } = &mut self.kind {
+            settings.filter = window_text(self.filter_edits[0]).replace("\r\n", "\n");
+            for n in 1..10 {
+                settings.presets[n - 1] = window_text(self.filter_edits[n]).replace("\r\n", "\n");
             }
         }
+    }
+    unsafe fn scroll_filters(&mut self, position: i32) {
+        self.scroll = position.clamp(0, scale(self.dpi, 570));
+        SetScrollPos(self.panel, SB_VERT, self.scroll, 1);
+        for n in 0..10 {
+            let y = scale(self.dpi, n as i32 * 100) - self.scroll;
+            SetWindowPos(
+                self.filter_labels[n],
+                null_mut(),
+                0,
+                y,
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOZORDER,
+            );
+            SetWindowPos(
+                self.filter_edits[n],
+                null_mut(),
+                0,
+                y + scale(self.dpi, 22),
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOZORDER,
+            );
+        }
+        ShowWindow(self.suggestions, SW_HIDE);
+        InvalidateRect(self.panel, null(), 1);
+    }
+    unsafe fn complete(&mut self, edit: HWND) {
+        self.edit = edit;
+        let text: Vec<u16> = window_text(edit).encode_utf16().collect();
+        let mut end = 0u32;
+        SendMessageW(edit, EM_GETSEL, &mut end as *mut u32 as usize, 0);
+        let end = (end as usize).min(text.len());
+        let start = text[..end]
+            .iter()
+            .rposition(|c| char::from_u32(*c as u32).is_some_and(char::is_whitespace))
+            .map_or(0, |n| n + 1);
+        let prefix = String::from_utf16_lossy(&text[start..end]);
+        self.tags = if prefix.starts_with(['+', '@', '(']) {
+            if let Kind::Filters { tasks, settings } = &self.kind {
+                view::suggestions(tasks, &prefix, settings.intellisense_case)
+            } else {
+                Vec::new()
+            }
+        } else {
+            Vec::new()
+        };
+        self.range = (start, end);
+        self.suggestion_index = 0;
+        SendMessageW(self.suggestions, LB_RESETCONTENT, 0, 0);
+        for tag in &self.tags {
+            SendMessageW(
+                self.suggestions,
+                LB_ADDSTRING,
+                0,
+                wide(tag).as_ptr() as isize,
+            );
+        }
+        if self.tags.is_empty() {
+            ShowWindow(self.suggestions, SW_HIDE);
+            return;
+        }
+        let mut point: POINT = zeroed();
+        GetCaretPos(&mut point);
+        MapWindowPoints(edit, self.hwnd, &mut point, 1);
+        SetWindowPos(
+            self.suggestions,
+            HWND_TOP,
+            point.x,
+            point.y + scale(self.dpi, 20),
+            scale(self.dpi, 220),
+            scale(self.dpi, 18) * self.tags.len().min(6) as i32,
+            SWP_NOACTIVATE | SWP_SHOWWINDOW,
+        );
+        SendMessageW(self.suggestions, LB_SETCURSEL, 0, 0);
+    }
+    unsafe fn accept_completion(&mut self) {
+        if let Some(tag) = self.tags.get(self.suggestion_index) {
+            SendMessageW(self.edit, EM_SETSEL, self.range.0, self.range.1 as isize);
+            SendMessageW(self.edit, EM_REPLACESEL, 1, wide(tag).as_ptr() as isize);
+            SetFocus(self.edit);
+        }
+        ShowWindow(self.suggestions, SW_HIDE);
+    }
+    unsafe fn key(&mut self, msg: &MSG) -> bool {
+        if !self.filter_edits.contains(&msg.hwnd) {
+            return false;
+        }
+        // Keep the focused preset visible while navigating with Tab.
+        if IsWindowVisible(self.suggestions) != 0 {
+            match msg.wParam as u16 {
+                VK_RETURN | VK_TAB | VK_SPACE => self.accept_completion(),
+                VK_DOWN => {
+                    self.suggestion_index =
+                        (self.suggestion_index + 1).min(self.tags.len().saturating_sub(1))
+                }
+                VK_UP => self.suggestion_index = self.suggestion_index.saturating_sub(1),
+                VK_ESCAPE => {
+                    ShowWindow(self.suggestions, SW_HIDE);
+                }
+                _ => return false,
+            }
+            SendMessageW(self.suggestions, LB_SETCURSEL, self.suggestion_index, 0);
+            return true;
+        }
+        false
     }
     unsafe fn accept(&mut self) {
         self.store_filter();
@@ -392,7 +556,7 @@ impl Dialog {
                 } else {
                     Some(path.into())
                 };
-                let values: Vec<_> = self.controls[..12]
+                let values: Vec<_> = self.controls[..15]
                     .iter()
                     .map(|h| SendMessageW(*h, BM_GETCHECK, 0, 0) == BST_CHECKED as isize)
                     .collect();
@@ -408,12 +572,15 @@ impl Dialog {
                 settings.preserve_blank = values[9];
                 settings.word_wrap = values[10];
                 settings.status_bar = values[11];
-                let Ok(size) = window_text(self.controls[12]).parse::<f32>() else {
-                    error_box(self.hwnd, "Font size must be a number between 8 and 30.");
+                settings.minimize_to_tray = values[12];
+                settings.minimize_on_close = values[13];
+                settings.debug_logging = values[14];
+                let Ok(size) = window_text(self.controls[15]).parse::<f32>() else {
+                    error_box(self.hwnd, "Font size must be a number between 8 and 96.");
                     return;
                 };
-                if !size.is_finite() || !(8.0..=30.0).contains(&size) {
-                    error_box(self.hwnd, "Font size must be a number between 8 and 30.");
+                if !size.is_finite() || !(8.0..=96.0).contains(&size) {
+                    error_box(self.hwnd, "Font size must be a number between 8 and 96.");
                     return;
                 }
                 settings.font_size = size;
@@ -439,44 +606,60 @@ unsafe extern "system" fn dialog_proc(hwnd: HWND, msg: u32, wp: usize, lp: isize
         return DefWindowProcW(hwnd, msg, wp, lp);
     };
     match msg {
-        WM_COMMAND => match (wp & 0xffff) as i32 {
-            IDOK => dialog.accept(),
-            IDCANCEL => dialog.result = Some(false),
-            103 => {
-                if let Kind::Filters { settings, selected } = &mut dialog.kind {
-                    settings.filter.clear();
-                    if *selected == 0 {
-                        set_text(dialog.edit, "");
+        WM_COMMAND => {
+            let id = (wp & 0xffff) as i32;
+            let notification = (wp >> 16) as u32;
+            if (600..610).contains(&id) {
+                if notification == EN_SETFOCUS {
+                    let n = id - 600;
+                    let y = scale(dialog.dpi, n * 100);
+                    if y < dialog.scroll {
+                        dialog.scroll_filters(y);
+                    } else if y + scale(dialog.dpi, 92) > dialog.scroll + scale(dialog.dpi, 430) {
+                        let bottom = y + scale(dialog.dpi, 92 - 430);
+                        dialog.scroll_filters(bottom);
+                    }
+                    dialog.edit = lp as HWND;
+                } else if notification == EN_CHANGE && GetFocus() == lp as HWND {
+                    dialog.complete(lp as HWND);
+                }
+                return 0;
+            }
+            match id {
+                IDOK => dialog.accept(),
+                IDCANCEL => dialog.result = Some(false),
+                103 => {
+                    if !dialog.filter_edits.is_empty() {
+                        set_text(dialog.filter_edits[0], "");
                     }
                 }
-            }
-            104 => {
-                if let Kind::Filters { settings, .. } = &mut dialog.kind {
-                    settings.filter.clear();
-                    settings.presets = Default::default();
+                104 => {
+                    for edit in &dialog.filter_edits {
+                        set_text(*edit, "");
+                    }
                 }
-                set_text(dialog.edit, "");
-            }
-            105 => match file(dialog.hwnd, true, "done.txt") {
-                Ok(Some(path)) => set_text(dialog.edit, &path.to_string_lossy()),
-                Ok(None) => {}
-                Err(e) => error_box(dialog.hwnd, &e.to_string()),
-            },
-            _ => {}
-        },
-        WM_NOTIFY => {
-            if (*(lp as *const NMHDR)).code == TCN_SELCHANGE {
-                dialog.store_filter();
-                let n = SendMessageW(dialog.tab, TCM_GETCURSEL, 0, 0).max(0) as usize;
-                if let Kind::Filters { settings, selected } = &mut dialog.kind {
-                    *selected = n;
-                    let text = if n == 0 {
-                        settings.filter.clone()
-                    } else {
-                        settings.presets[n - 1].clone()
-                    };
-                    set_text(dialog.edit, &text.replace('\n', "\r\n"));
+                105 => match file(dialog.hwnd, true, "done.txt") {
+                    Ok(Some(path)) => set_text(dialog.edit, &path.to_string_lossy()),
+                    Ok(None) => {}
+                    Err(e) => error_box(dialog.hwnd, &e.to_string()),
+                },
+                108 => {
+                    let owner = dialog.hwnd;
+                    let dpi = dialog.dpi;
+                    if let Kind::Options(settings) = &mut dialog.kind {
+                        if let Err(error) = choose_font(owner, dpi, settings) {
+                            error_box(owner, &error.to_string());
+                        }
+                        let size = settings.font_size.to_string();
+                        set_text(dialog.controls[15], &size);
+                    }
                 }
+                109 if notification == LBN_SELCHANGE || notification == LBN_DBLCLK => {
+                    dialog.suggestion_index =
+                        SendMessageW(dialog.suggestions, LB_GETCURSEL, 0, 0).max(0) as usize;
+                    dialog.accept_completion();
+                }
+                _ => {}
             }
         }
         WM_CLOSE => dialog.result = Some(false),
@@ -496,13 +679,26 @@ unsafe fn show(parent: HWND, font: HFONT, dpi: u32, kind: Kind) -> io::Result<Op
         ..zeroed()
     };
     RegisterClassExW(&class);
+    let panel_class = WNDCLASSEXW {
+        lpfnWndProc: Some(panel_proc),
+        lpszClassName: w!("TodoTxtRustFilterPanel"),
+        ..class
+    };
+    RegisterClassExW(&panel_class);
     let state = RefCell::new(Dialog {
         hwnd: null_mut(),
         parent,
         font,
         dpi,
         edit: null_mut(),
-        tab: null_mut(),
+        panel: null_mut(),
+        filter_edits: Vec::new(),
+        filter_labels: Vec::new(),
+        scroll: 0,
+        suggestions: null_mut(),
+        tags: Vec::new(),
+        range: (0, 0),
+        suggestion_index: 0,
         controls: Vec::new(),
         kind,
         result: None,
@@ -541,6 +737,9 @@ unsafe fn show(parent: HWND, font: HFONT, dpi: u32, kind: Kind) -> io::Result<Op
                 PostQuitMessage(msg.wParam as i32);
             }
             break;
+        }
+        if msg.message == WM_KEYDOWN && state.borrow_mut().key(&msg) {
+            continue;
         }
         if IsDialogMessageW(hwnd, &msg) == 0 {
             TranslateMessage(&msg);
@@ -587,6 +786,7 @@ pub(super) unsafe fn filters(
     font: HFONT,
     dpi: u32,
     settings: &Settings,
+    tasks: &[(usize, Task)],
 ) -> io::Result<Option<Settings>> {
     match show(
         parent,
@@ -594,7 +794,7 @@ pub(super) unsafe fn filters(
         dpi,
         Kind::Filters {
             settings: Box::new(settings.clone()),
-            selected: 0,
+            tasks: tasks.to_vec(),
         },
     )? {
         Some(Kind::Filters { settings, .. }) => Ok(Some(*settings)),
@@ -611,4 +811,93 @@ pub(super) unsafe fn options(
         Some(Kind::Options(settings)) => Ok(Some(*settings)),
         _ => Ok(None),
     }
+}
+
+unsafe fn choose_font(owner: HWND, dpi: u32, settings: &mut Settings) -> io::Result<()> {
+    let mut lf: LOGFONTW = zeroed();
+    lf.lfHeight = -(settings.font_size * dpi as f32 / 96.0).round() as i32;
+    lf.lfWeight = settings.font_weight;
+    lf.lfItalic = settings.font_italic as u8;
+    lf.lfUnderline = settings.font_underline as u8;
+    lf.lfStrikeOut = settings.font_strike as u8;
+    lf.lfCharSet = DEFAULT_CHARSET;
+    let name: Vec<u16> = settings.font_family.encode_utf16().take(31).collect();
+    lf.lfFaceName[..name.len()].copy_from_slice(&name);
+    let mut chooser = CHOOSEFONTW {
+        lStructSize: size_of::<CHOOSEFONTW>() as u32,
+        hwndOwner: owner,
+        lpLogFont: &mut lf,
+        Flags: CF_SCREENFONTS | CF_EFFECTS | CF_INITTOLOGFONTSTRUCT,
+        rgbColors: settings.font_color,
+        ..zeroed()
+    };
+    if ChooseFontW(&mut chooser) == 0 {
+        let code = CommDlgExtendedError();
+        if code != 0 {
+            return Err(io::Error::other(format!(
+                "Windows font dialog failed: {code:#x}"
+            )));
+        }
+        return Ok(());
+    }
+    // ChooseFont sizes are tenths of a point; settings use device-independent pixels.
+    settings.font_size = (chooser.iPointSize as f32 / 10.0 * 96.0 / 72.0).clamp(8.0, 96.0);
+    let end = lf
+        .lfFaceName
+        .iter()
+        .position(|c| *c == 0)
+        .unwrap_or(lf.lfFaceName.len());
+    settings.font_family = String::from_utf16_lossy(&lf.lfFaceName[..end]);
+    settings.font_weight = lf.lfWeight;
+    settings.font_italic = lf.lfItalic != 0;
+    settings.font_underline = lf.lfUnderline != 0;
+    settings.font_strike = lf.lfStrikeOut != 0;
+    settings.font_color = chooser.rgbColors;
+    Ok(())
+}
+
+unsafe extern "system" fn panel_proc(hwnd: HWND, msg: u32, wp: usize, lp: isize) -> isize {
+    if msg == WM_NCCREATE {
+        SetWindowLongPtrW(
+            hwnd,
+            GWLP_USERDATA,
+            (*(lp as *const CREATESTRUCTW)).lpCreateParams as isize,
+        );
+    }
+    if msg == WM_COMMAND {
+        return SendMessageW(GetParent(hwnd), msg, wp, lp);
+    }
+    let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const RefCell<Dialog>;
+    if !ptr.is_null()
+        && let Ok(mut dialog) = (&*ptr).try_borrow_mut()
+    {
+        if msg == WM_VSCROLL {
+            let position = match wp as u16 as i32 {
+                SB_LINEUP => dialog.scroll - scale(dialog.dpi, 26),
+                SB_LINEDOWN => dialog.scroll + scale(dialog.dpi, 26),
+                SB_PAGEUP => dialog.scroll - scale(dialog.dpi, 400),
+                SB_PAGEDOWN => dialog.scroll + scale(dialog.dpi, 400),
+                SB_THUMBPOSITION | SB_THUMBTRACK => {
+                    let mut info = SCROLLINFO {
+                        cbSize: size_of::<SCROLLINFO>() as u32,
+                        fMask: SIF_TRACKPOS,
+                        ..zeroed()
+                    };
+                    GetScrollInfo(hwnd, SB_VERT, &mut info);
+                    info.nTrackPos
+                }
+                SB_TOP => 0,
+                SB_BOTTOM => scale(dialog.dpi, 570),
+                _ => dialog.scroll,
+            };
+            dialog.scroll_filters(position);
+            return 0;
+        }
+        if msg == WM_MOUSEWHEEL {
+            let position = dialog.scroll - ((wp >> 16) as i16 as i32 / 120) * scale(dialog.dpi, 78);
+            dialog.scroll_filters(position);
+            return 0;
+        }
+    }
+    DefWindowProcW(hwnd, msg, wp, lp)
 }

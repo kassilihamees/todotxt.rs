@@ -87,6 +87,10 @@ impl Model {
     pub fn save(&self) -> io::Result<()> {
         self.settings.save(&self.config_dir)
     }
+    pub fn debug_event(&self, event: &str) {
+        // Events omit task text, drafts, filters and file paths.
+        self.settings.debug_event(&self.config_dir, event);
+    }
     pub fn refresh(&mut self) {
         self.date = Local::now().date_naive();
         self.tasks = self
@@ -232,29 +236,7 @@ impl Model {
         self.save()
     }
     pub fn print_preview(&self) -> io::Result<PathBuf> {
-        let escape = |s: &str| {
-            s.replace('&', "&amp;")
-                .replace('<', "&lt;")
-                .replace('>', "&gt;")
-                .replace('"', "&quot;")
-        };
-        let mut html = String::from(
-            "<!doctype html><meta charset=utf-8><title>todotxt.rs — Print Preview</title><style>body{font:14px sans-serif}h3{margin:18px 0 4px}p{margin:0;padding:3px}p:nth-child(even){background:#f8f8f8}.done{text-decoration:line-through;color:#999}@media print{button{display:none}}</style><button onclick='window.print()'>Print</button>",
-        );
-        for row in &self.rows {
-            match row {
-                Row::Header(s) => html.push_str(&format!("<h3>{}</h3>", escape(s))),
-                Row::Task(id) => {
-                    if let Some((_, t)) = self.tasks.iter().find(|(n, _)| n == id) {
-                        html.push_str(&format!(
-                            "<p class='{}'>{}</p>",
-                            if t.completed { "done" } else { "task" },
-                            escape(&t.raw)
-                        ));
-                    }
-                }
-            }
-        }
+        let html = crate::printing::html(&self.tasks, &self.rows);
         fs::create_dir_all(&self.config_dir)?;
         let path = self.config_dir.join("print-preview.html");
         fs::write(&path, html)?;

@@ -23,9 +23,8 @@ enum Dialog {
     Filters(Box<Settings>),
     Options(Box<Settings>),
     Help,
-    Calendar,
 }
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum Action {
     Open,
     NewFile,
@@ -76,6 +75,7 @@ pub struct Desktop {
     error: Option<String>,
     last_poll: Instant,
     date: NaiveDate,
+    calendar: bool,
     completion_index: usize,
     completion_dismissed: bool,
 }
@@ -149,6 +149,7 @@ impl Desktop {
             error: startup_error,
             last_poll: Instant::now(),
             date: today(),
+            calendar: false,
             completion_index: 0,
             completion_dismissed: false,
         };
@@ -331,6 +332,8 @@ impl Desktop {
         }
     }
     fn action(&mut self, action: Action, ctx: &egui::Context) {
+        self.settings
+            .debug_event(&self.config_dir, &format!("action {action:?}"));
         match action {
             Action::Open => {
                 if let Some(path) = rfd::FileDialog::new()
@@ -462,7 +465,25 @@ impl Desktop {
                 self.save_settings();
             }
             Action::Help => self.dialog = Some(Dialog::Help),
-            Action::Calendar => self.dialog = Some(Dialog::Calendar),
+            Action::Calendar => {
+                self.calendar = !self.calendar;
+                let title = if self.calendar {
+                    let days = (0..7)
+                        .map(|n| {
+                            let date = today() + Duration::days(n);
+                            format!(
+                                "  {}:{}",
+                                &date.format("%A").to_string()[..2],
+                                date.format("%m-%d")
+                            )
+                        })
+                        .collect::<String>();
+                    format!("todotxt.rs       Calendar:  {days}")
+                } else {
+                    "todotxt.rs".into()
+                };
+                ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
+            }
             Action::Print => self.print(),
             Action::Log => {
                 let path = self.config_dir.join("error.log");
@@ -527,29 +548,7 @@ impl Desktop {
         }
     }
     fn print(&mut self) {
-        fn escaped(s: &str) -> String {
-            s.replace('&', "&amp;")
-                .replace('<', "&lt;")
-                .replace('>', "&gt;")
-                .replace('"', "&quot;")
-        }
-        let mut html = String::from(
-            "<!doctype html><meta charset=utf-8><title>todotxt.rs — Print Preview</title><style>body{font:14px sans-serif}h3{margin:18px 0 4px}p{margin:0;padding:3px}p:nth-child(even){background:#f8f8f8}.done{text-decoration:line-through;color:#999}@media print{button{display:none}}</style><button onclick='window.print()'>Print</button>",
-        );
-        for row in &self.rows {
-            match row {
-                Row::Header(name) => html.push_str(&format!("<h3>{}</h3>", escaped(name))),
-                Row::Task(id) => {
-                    if let Some((_, task)) = self.tasks.iter().find(|(n, _)| n == id) {
-                        html.push_str(&format!(
-                            "<p class='{}'>{}</p>",
-                            if task.completed { "done" } else { "task" },
-                            escaped(&task.raw)
-                        ));
-                    }
-                }
-            }
-        }
+        let html = todotxt_rs::printing::html(&self.tasks, &self.rows);
         let path = self.config_dir.join("print-preview.html");
         match fs::write(&path, html).and_then(|()| open::that(path).map_err(io::Error::other)) {
             Ok(()) => {}
@@ -955,7 +954,10 @@ impl Desktop {
                 }
                 if i.consume_key(egui::Modifiers::NONE, Key::Tab)
                     || i.consume_key(egui::Modifiers::NONE, Key::Enter)
+                    || i.consume_key(egui::Modifiers::NONE, Key::Space)
                 {
+                    i.events
+                        .retain(|event| !matches!(event, egui::Event::Text(text) if text == " "));
                     accept = Some(suggestions[self.completion_index].clone());
                     consumed_enter = true;
                 }
@@ -1088,7 +1090,11 @@ impl Desktop {
                             } else if parse_date(&task.due_date) == Some(self.date) {
                                 Color32::from_rgb(0, 128, 0)
                             } else {
-                                Color32::BLACK
+                                Color32::from_rgb(
+                                    self.settings.font_color as u8,
+                                    (self.settings.font_color >> 8) as u8,
+                                    (self.settings.font_color >> 16) as u8,
+                                )
                             };
                             let indent = if grouped { 12.0 } else { 4.0 };
                             let max_width = if self.settings.word_wrap {
@@ -1096,8 +1102,7 @@ impl Desktop {
                             } else {
                                 f32::INFINITY
                             };
-                            let (job, links) =
-                                task_layout(&task, self.settings.font_size, color, max_width);
+                            let (job, links) = task_layout(&task, &self.settings, color, max_width);
                             let galley = ui.fonts_mut(|f| f.layout_job(job));
                             let width = ui.available_width().max(galley.size().x + indent + 4.0);
                             let (rect, response) = ui.allocate_exact_size(
@@ -1284,19 +1289,22 @@ impl Desktop {
                         .max_height(430.0)
                         .show(ui, |ui| {
                             ui.label("Currently active filter:");
-                            ui.add(
-                                egui::TextEdit::multiline(&mut settings.filter)
-                                    .desired_width(f32::INFINITY)
-                                    .desired_rows(3),
+                            filter_editor(
+                                ui,
+                                &mut settings.filter,
+                                &self.tasks,
+                                settings.intellisense_case,
+                                egui::Id::new("filter_active"),
                             );
                             for (n, text) in settings.presets.iter_mut().enumerate() {
                                 ui.add_space(8.0);
                                 ui.label(format!("Preset filter #{}:", n + 1));
-                                ui.add(
-                                    egui::TextEdit::multiline(text)
-                                        .id_source(n)
-                                        .desired_width(f32::INFINITY)
-                                        .desired_rows(3),
+                                filter_editor(
+                                    ui,
+                                    text,
+                                    &self.tasks,
+                                    settings.intellisense_case,
+                                    egui::Id::new(("filter_preset", n)),
                                 );
                             }
                         });
@@ -1343,7 +1351,21 @@ impl Desktop {
                     );
                     ui.horizontal(|ui| {
                         ui.label("Task font size");
-                        ui.add(egui::DragValue::new(&mut s.font_size).range(8.0..=30.0));
+                        ui.add(egui::DragValue::new(&mut s.font_size).range(8.0..=96.0));
+                    });
+                    ui.horizontal(|ui| {
+                        ui.checkbox(&mut s.font_italic, "Italic");
+                        ui.checkbox(&mut s.font_underline, "Underline");
+                        ui.checkbox(&mut s.font_strike, "Strikeout");
+                        let mut color = [
+                            s.font_color as u8,
+                            (s.font_color >> 8) as u8,
+                            (s.font_color >> 16) as u8,
+                        ];
+                        if ui.color_edit_button_srgb(&mut color).changed() {
+                            s.font_color =
+                                color[0] as u32 | (color[1] as u32) << 8 | (color[2] as u32) << 16;
+                        }
                     });
                     ui.add_space(12.0);
                     for (value, label) in [
@@ -1369,6 +1391,7 @@ impl Desktop {
                         ),
                         (&mut s.word_wrap, "Apply word wrap to task list"),
                         (&mut s.status_bar, "Display status bar"),
+                        (&mut s.debug_logging, "Enable debug logging"),
                     ] {
                         ui.checkbox(value, label);
                     }
@@ -1381,13 +1404,6 @@ impl Desktop {
                         .show(ui, |ui| {
                             ui.label(include_str!("../docs/HELP.md"));
                         });
-                }
-                Dialog::Calendar => {
-                    ui.heading("Calendar");
-                    for n in 0..14 {
-                        let date = self.date + Duration::days(n);
-                        ui.label(format!("{}    {}", date.format("%A"), date));
-                    }
                 }
             }
             ui.add_space(12.0);
@@ -1589,7 +1605,7 @@ fn menu(
 type Links = Vec<(usize, usize, String)>;
 fn task_layout(
     task: &Task,
-    font_size: f32,
+    settings: &Settings,
     color: Color32,
     width: f32,
 ) -> (egui::text::LayoutJob, Links) {
@@ -1605,11 +1621,17 @@ fn task_layout(
             || token.starts_with("ftp://")
             || token.starts_with("www.");
         let mut format = TextFormat {
-            font_id: FontId::proportional(font_size),
+            font_id: FontId::proportional(settings.font_size),
             color,
+            italics: settings.font_italic,
+            underline: if settings.font_underline {
+                Stroke::new(1.0_f32, color)
+            } else {
+                Stroke::NONE
+            },
             ..Default::default()
         };
-        if task.completed {
+        if task.completed || settings.font_strike {
             format.strikethrough = Stroke::new(1.0_f32, color);
         }
         if link {
@@ -1631,7 +1653,7 @@ fn task_layout(
             &word[token.len()..],
             0.0,
             TextFormat {
-                font_id: FontId::proportional(font_size),
+                font_id: FontId::proportional(settings.font_size),
                 color,
                 ..Default::default()
             },
@@ -1750,6 +1772,7 @@ mod gui_tests {
                 error: None,
                 last_poll: Instant::now(),
                 date: today(),
+                calendar: false,
                 completion_index: 0,
                 completion_dismissed: false,
             };
@@ -1865,6 +1888,31 @@ mod gui_tests {
     }
 
     #[test]
+    fn space_accepts_task_and_filter_suggestions_without_saving_or_closing() {
+        let mut h = Harness::new();
+        h.key(Key::N);
+        h.text("new +t");
+        h.frame(Vec::new());
+        h.key(Key::Space);
+        assert_eq!(h.app.editor, "new +test");
+        assert_eq!(h.app.tasks.len(), 2);
+        h.key(Key::Escape);
+        h.key(Key::F);
+        let id = egui::Id::new("filter_active");
+        h.ctx.memory_mut(|m| m.request_focus(id));
+        h.frame(Vec::new());
+        h.text("+t");
+        h.frame(Vec::new());
+        h.key(Key::Space);
+        let Some(Dialog::Filters(settings)) = &h.app.dialog else {
+            panic!("Filter dialog closed during completion");
+        };
+        assert_eq!(settings.filter, "+test");
+        assert!(h.app.settings.filter.is_empty());
+        assert_eq!(h.file(), "(A) first +test\nsecond @home\n");
+    }
+
+    #[test]
     fn status_and_task_rows_paint_inside_the_window() {
         let mut h = Harness::new();
         let output = h.frame(Vec::new());
@@ -1947,4 +1995,103 @@ mod gui_tests {
         let _ = h.ctx.run(input, |ctx| h.app.render(ctx));
         assert!(h.file().contains("draft"));
     }
+}
+
+#[derive(Clone, Default)]
+struct FilterCompletion {
+    prefix: String,
+    index: usize,
+    dismissed: bool,
+}
+fn filter_editor(
+    ui: &mut egui::Ui,
+    text: &mut String,
+    tasks: &[(usize, Task)],
+    case_sensitive: bool,
+    id: egui::Id,
+) {
+    let state_id = id.with("completion");
+    let mut completion = ui.data_mut(|data| {
+        data.get_temp::<FilterCompletion>(state_id)
+            .unwrap_or_default()
+    });
+    let cursor = egui::TextEdit::load_state(ui.ctx(), id)
+        .and_then(|s| s.cursor.char_range())
+        .map_or(text.chars().count(), |range| range.primary.index);
+    let before: String = text.chars().take(cursor).collect();
+    let start = before
+        .rfind(char::is_whitespace)
+        .map_or(0, |n| n + before[n..].chars().next().unwrap().len_utf8());
+    let prefix = &before[start..];
+    if completion.prefix != prefix {
+        completion.prefix = prefix.into();
+        completion.index = 0;
+        completion.dismissed = false;
+    }
+    let focused = ui.memory(|m| m.has_focus(id));
+    let suggestions = if focused && !completion.dismissed && prefix.starts_with(['+', '@', '(']) {
+        view::suggestions(tasks, prefix, case_sensitive)
+    } else {
+        Vec::new()
+    };
+    completion.index = completion.index.min(suggestions.len().saturating_sub(1));
+    let mut accept = None;
+    if !suggestions.is_empty() {
+        ui.input_mut(|i| {
+            if i.consume_key(egui::Modifiers::NONE, Key::ArrowDown) {
+                completion.index = (completion.index + 1).min(suggestions.len() - 1);
+            }
+            if i.consume_key(egui::Modifiers::NONE, Key::ArrowUp) {
+                completion.index = completion.index.saturating_sub(1);
+            }
+            if i.consume_key(egui::Modifiers::NONE, Key::Tab)
+                || i.consume_key(egui::Modifiers::NONE, Key::Enter)
+                || i.consume_key(egui::Modifiers::NONE, Key::Space)
+            {
+                i.events
+                    .retain(|event| !matches!(event, egui::Event::Text(text) if text == " "));
+                accept = Some(suggestions[completion.index].clone());
+            }
+            if i.consume_key(egui::Modifiers::NONE, Key::Escape) {
+                completion.dismissed = true;
+            }
+        });
+    }
+    let output = egui::TextEdit::multiline(text)
+        .id(id)
+        .desired_width(f32::INFINITY)
+        .desired_rows(3)
+        .show(ui);
+    if !suggestions.is_empty() && !completion.dismissed {
+        egui::Area::new(id.with("suggestions"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(output.response.rect.left_bottom())
+            .show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    for (n, suggestion) in suggestions.iter().take(8).enumerate() {
+                        if ui
+                            .selectable_label(n == completion.index, suggestion)
+                            .clicked()
+                        {
+                            accept = Some(suggestion.clone());
+                        }
+                    }
+                });
+            });
+    }
+    if let Some(tag) = accept {
+        let tail: String = text.chars().skip(cursor).collect();
+        *text = format!("{}{tag}{tail}", &before[..start]);
+        let mut state = output.state;
+        state
+            .cursor
+            .set_char_range(Some(egui::text::CCursorRange::one(
+                egui::text::CCursor::new(before[..start].chars().count() + tag.chars().count()),
+            )));
+        state.store(ui.ctx(), id);
+        output.response.request_focus();
+        completion.dismissed = true;
+        completion.prefix = tag;
+    }
+    ui.data_mut(|data| data.insert_temp(state_id, completion));
 }
