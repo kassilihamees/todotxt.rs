@@ -29,3 +29,12 @@ must remain compatible with both frontends through `src/settings.rs`.
 Validate substantive task/file changes with regression tests. Before finishing,
 run `cargo fmt --check`, `cargo test`, and `cargo clippy --all-targets -- -D warnings`.
 Do not claim Linux runtime validation from Windows-only checks.
+
+## Accepted parity decisions (2026-10-09)
+
+The maintainer accepts the current native Windows printing and browser HTML
+preview as finished. Do not implement the original embedded print preview or
+chase its exact paper layout as parity work. Donations are also closed: do not
+add a donation menu or donation infrastructure. These are accepted differences,
+not remaining gaps. The upstream updater is only an optional version check and
+website link, not an automatic installer; describe it accurately.

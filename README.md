@@ -233,11 +233,15 @@ filters or paths; error messages can still include file paths.
 Windows Ctrl+P opens the native printer dialog and prints the visible sorted,
 filtered, grouped tasks in a Done/Created/Due/Details table. Ctrl+Shift+P opens
 HTML preview in the browser. Linux uses the same printable HTML table. The
-original embedded preview and exact paper layout are still different. Printer
-cancellation was exercised; physical printing has not been validated.
+maintainer accepts this printing solution as finished; recreating the original
+embedded preview or exact paper layout is out of scope. Printer cancellation
+was exercised; physical printing has not been validated.
 
-Automatic application updates, the original donation menu, Linux tray/global
-hotkey integration and full portable font-family selection remain outstanding.
+Donations are closed by maintainer decision; no donation menu is planned.
+Linux tray/global hotkey integration and full portable font-family selection
+remain outstanding. The original optional update notification is not implemented:
+it checked a published application version and offered a website link, without
+downloading or installing updates. This is unrelated to todo.txt auto-refresh.
 Windows alphabetical/project/context ordering now uses the user's Windows
 locale; Linux retains deterministic lowercase ordering.
 Some malformed-text parsing quirks are not

@@ -46,21 +46,21 @@ complete feature audit and validation that we do not yet have.
 | Windows resize, maximize, taskbar minimize, restore | Native release smoke check passes; task text reflows when wrapping is enabled |
 | Windows system tray, minimize-on-close, global Ctrl+Alt+M | Implemented; native minimize/restore/close/forced-exit and hotkey message routing pass; Linux integration remains |
 | Font selection, filter suggestions, debug logging | Windows native full font chooser; scrolling ten-field filter form with suggestions; portable size/effects/color and filter suggestions; optional action log |
-| Printing and calendar | Native Windows printer dialog; shared date/details HTML preview; title-bar calendar matches seven-day toggle; embedded preview/paper layout still differ |
-| Original updater/donation and locale collation | Updater/donation outstanding; Windows culture ordering implemented, Linux deterministic ordering retained |
+| Printing and calendar | Finished: maintainer accepts the native Windows printer dialog and shared HTML preview; embedded preview/exact paper layout are excluded. Title-bar calendar matches the seven-day toggle |
+| Donations | Finished by maintainer decision: donation UI is intentionally omitted |
+| Update notification and locale collation | Original optional version check/website link is not implemented; it is not an automatic installer. Windows culture ordering implemented, Linux deterministic ordering retained |
 | Linux runtime, desktop integration, exact visual/interaction comparison | Still needs validation; portable frontend is present |
 
-Remaining parity work includes the embedded print preview, upstream updater and
-donation behavior adapted to the Rust application, portable font-family/weight
-selection, Linux tray/global hotkey integration, and systematic visual/runtime
-comparison on both platforms. Deferred ideas in `BACKLOG.md` remain out of scope.
+Remaining parity work includes portable font-family/weight selection, Linux
+tray/global hotkey integration, and systematic visual/runtime comparison on both
+platforms. The original optional update notification remains unimplemented. Deferred ideas in `BACKLOG.md` remain out of scope.
 
 Implementation and validation status is recorded in `PROGRESS.md`. The working
 port implements the main task/file workflows, eight sorts, grouping, filters,
 presets, date/priority shortcuts, suggestions and configurable rendering.
 
-Known gaps: automatic updater/donation, embedded print preview and exact print
-layout, full portable font-family/weight selection, Linux tray/global hotkey and
+Known gaps: optional update notification, full portable font-family/weight
+selection, Linux tray/global hotkey and
 locale-dependent collation, desktop theming and exact WPF metrics.
 Blank lines and untouched whitespace are retained even when hidden. A changed source
 refuses writes instead of silently reloading and matching raw task strings.
@@ -80,3 +80,16 @@ preferences, minimizes to the tray, restores through the icon callback, closes
 to the tray, restores through WM_HOTKEY, and exits through File > Exit. This
 verifies hotkey routing; injected message checks alone do not prove physical
 shortcut delivery, Explorer-restart recovery, or physical printer output.
+
+## Accepted differences (2026-10-09)
+
+The maintainer marked printing and donations finished. Keep the current native
+Windows print dialog and browser HTML preview; do not recreate the embedded
+preview. Exact upstream paper layout is not a parity requirement. A donation
+menu is intentionally omitted and is not outstanding work.
+
+The original UpdateChecker optionally fetches Updates.xml at startup, compares
+the advertised version and exposes a website link when it differs from the
+running version (the upstream check does not compare version ordering).
+It does not download or install an update. The Rust port currently performs no
+application-version checks; this is separate from refreshing changed task files.

@@ -1,5 +1,17 @@
 # Progress
 
+## Accepted printing and donation scope (2026-10-09)
+
+- Maintainer accepts the current printing solution as finished. Closed embedded
+  print preview and exact upstream paper layout; do not pursue those differences.
+- Donations are finished by intentional omission. Do not add donation UI.
+- Inspected upstream UpdateChecker and its menu handler: optional startup
+  version checking plus a website link, with no update download or installation.
+  Corrected the parity notes and README to describe that distinction. The Rust
+  port does not currently check application versions.
+- Recorded these decisions in AGENTS.md so future work respects them. No
+  application behavior changed. Earlier entries below describe historical scope.
+
 ## Remaining Windows parity work (2026-10-09)
 
 - Added native tray icon/context Exit, double-click show/hide, minimize-on-close,
