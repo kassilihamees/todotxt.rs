@@ -1,5 +1,25 @@
 # Progress
 
+## Tray right-click and global shortcut verification (2026-10-09)
+
+- Verified the existing release's notification-area Exit menu against an isolated
+  fictional todo file; the reported missing menu was not reproduced in that build.
+- Updated the notification icon to Windows version-4 callbacks, decoded packed
+  event messages while retaining legacy support, and kept its standard tooltip.
+  Restore callback version after Explorer restarts. Release application state
+  before the context menu's nested message loop so notifications and commands
+  remain available while the menu is open.
+- Expanded native smoke coverage to inspect the actual Exit item and select it
+  while the owner is hidden and minimize-on-close is enabled. File Exit and tray
+  Exit are verified independently. Both passed against the rebuilt release.
+- With the original application closed, Windows SendInput Ctrl+Alt+M chords
+  successfully hid and restored the isolated application. This verifies actual
+  OS shortcut delivery rather than only posted WM_HOTKEY messages.
+- Keyboard injection is opt-in (`-PhysicalHotkey`) for interactive local checks;
+  ordinary CI smoke runs retain message-based checks.
+- Built and smoke-tested `target/release/todotxt-rs.exe`. Test fixtures, profiles
+  and captures stay ignored and contain fictional data. No personal file changed.
+
 ## Accepted printing and donation scope (2026-10-09)
 
 - Maintainer accepts the current printing solution as finished. Closed embedded

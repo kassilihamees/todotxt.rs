@@ -28,7 +28,7 @@ impl Integration {
         data.cbSize = size_of::<NOTIFYICONDATAW>() as u32;
         data.hWnd = self.hwnd;
         data.uID = 1;
-        data.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+        data.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP | NIF_SHOWTIP;
         data.uCallbackMessage = TRAY_MESSAGE;
         data.hIcon = LoadIconW(
             GetModuleHandleW(null()),
@@ -52,6 +52,7 @@ impl Integration {
                 ));
             }
             self.active = true;
+            self.set_callback_version();
         }
         if !self.hotkey {
             if RegisterHotKey(
@@ -69,11 +70,21 @@ impl Integration {
         }
         Ok(())
     }
+    unsafe fn set_callback_version(&self) {
+        let mut icon = self.icon();
+        icon.Anonymous.uVersion = NOTIFYICON_VERSION_4;
+        // A failure leaves legacy callbacks usable; the window handles both layouts.
+        Shell_NotifyIconW(NIM_SETVERSION, &icon);
+    }
     pub unsafe fn recreate_icon(&mut self) {
-        if self.active && Shell_NotifyIconW(NIM_ADD, &self.icon()) == 0 {
-            self.active = false;
-            ShowWindow(self.hwnd, SW_SHOWNORMAL);
-            PostMessageW(self.hwnd, RELAYOUT, 0, 0);
+        if self.active {
+            if Shell_NotifyIconW(NIM_ADD, &self.icon()) != 0 {
+                self.set_callback_version();
+            } else {
+                self.active = false;
+                ShowWindow(self.hwnd, SW_SHOWNORMAL);
+                PostMessageW(self.hwnd, RELAYOUT, 0, 0);
+            }
         }
     }
     pub unsafe fn toggle(&self) {
@@ -85,27 +96,6 @@ impl Integration {
             ShowWindow(self.hwnd, SW_MINIMIZE);
             ShowWindow(self.hwnd, SW_HIDE);
         }
-    }
-    pub unsafe fn popup(&self) {
-        let menu = CreatePopupMenu();
-        AppendMenuW(menu, MF_STRING, EXIT as usize, w!("E&xit"));
-        let mut point: POINT = zeroed();
-        GetCursorPos(&mut point);
-        SetForegroundWindow(self.hwnd);
-        let command = TrackPopupMenu(
-            menu,
-            TPM_RETURNCMD | TPM_RIGHTBUTTON,
-            point.x,
-            point.y,
-            0,
-            self.hwnd,
-            null(),
-        );
-        if command != 0 {
-            PostMessageW(self.hwnd, WM_COMMAND, command as usize, 0);
-        }
-        PostMessageW(self.hwnd, WM_NULL, 0, 0);
-        DestroyMenu(menu);
     }
     pub unsafe fn remove(&mut self) {
         if self.hotkey {
@@ -128,4 +118,26 @@ impl Drop for Integration {
             self.remove();
         }
     }
+}
+
+pub(super) unsafe fn popup(hwnd: HWND) {
+    let menu = CreatePopupMenu();
+    AppendMenuW(menu, MF_STRING, EXIT as usize, w!("E&xit"));
+    let mut point: POINT = zeroed();
+    GetCursorPos(&mut point);
+    SetForegroundWindow(hwnd);
+    let command = TrackPopupMenu(
+        menu,
+        TPM_RETURNCMD | TPM_RIGHTBUTTON,
+        point.x,
+        point.y,
+        0,
+        hwnd,
+        null(),
+    );
+    if command != 0 {
+        PostMessageW(hwnd, WM_COMMAND, command as usize, 0);
+    }
+    PostMessageW(hwnd, WM_NULL, 0, 0);
+    DestroyMenu(menu);
 }

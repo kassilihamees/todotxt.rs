@@ -44,7 +44,7 @@ complete feature audit and validation that we do not yet have.
 | Task editing, completion, priorities/dates, archive, sorts, grouping, filters/presets | Implemented; task/file tests and selected GUI flows pass |
 | Windows menus, editor, list, status, owned dialogs | Native controls implemented; remaining WPF metric/dialog differences |
 | Windows resize, maximize, taskbar minimize, restore | Native release smoke check passes; task text reflows when wrapping is enabled |
-| Windows system tray, minimize-on-close, global Ctrl+Alt+M | Implemented; native minimize/restore/close/forced-exit and hotkey message routing pass; Linux integration remains |
+| Windows system tray, minimize-on-close, global Ctrl+Alt+M | Implemented; native minimize/restore/close/forced-exit and hotkey message routing and local Windows keyboard-input delivery pass; Linux integration remains |
 | Font selection, filter suggestions, debug logging | Windows native full font chooser; scrolling ten-field filter form with suggestions; portable size/effects/color and filter suggestions; optional action log |
 | Printing and calendar | Finished: maintainer accepts the native Windows printer dialog and shared HTML preview; embedded preview/exact paper layout are excluded. Title-bar calendar matches the seven-day toggle |
 | Donations | Finished by maintainer decision: donation UI is intentionally omitted |
@@ -78,8 +78,16 @@ Windows-specific validation: the smoke script opens/cancels the real font and
 printer dialogs, accepts a filter suggestion with Space, persists tray/font/log
 preferences, minimizes to the tray, restores through the icon callback, closes
 to the tray, restores through WM_HOTKEY, and exits through File > Exit. This
-verifies hotkey routing; injected message checks alone do not prove physical
-shortcut delivery, Explorer-restart recovery, or physical printer output.
+verifies hotkey routing. Local interactive runs with `-PhysicalHotkey` also use
+Windows SendInput to verify Ctrl+Alt+M hide/restore through OS keyboard delivery.
+The actual notification-area right-click menu's Exit item is inspected and
+selected while the window is hidden; both tray Exit and File Exit quit despite
+minimize-on-close. Explorer-restart recovery and physical printing still need
+validation.
+
+The notification icon now requests Windows version-4 callbacks and handles both
+packed modern and legacy events, following [Microsoft's notification icon
+specification](https://learn.microsoft.com/windows/win32/api/shellapi/ns-shellapi-notifyicondataw).
 
 ## Accepted differences (2026-10-09)
 

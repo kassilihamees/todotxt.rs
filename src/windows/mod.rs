@@ -413,9 +413,16 @@ unsafe extern "system" fn window_proc(
             return 0;
         }
         shell::TRAY_MESSAGE => {
-            match lparam as u32 {
+            // Version 4 packs the icon ID into the upper half; older callbacks
+            // carry just the event. Decode both, including keyboard context menus.
+            match lparam as u32 & 0xffff {
                 WM_LBUTTONDBLCLK => app.shell.toggle(),
-                WM_RBUTTONUP | WM_CONTEXTMENU => app.shell.popup(),
+                WM_RBUTTONUP | WM_CONTEXTMENU => {
+                    // TrackPopupMenu runs a nested message loop. Release application
+                    // state so menu notifications and queued commands can be handled.
+                    drop(app);
+                    shell::popup(hwnd);
+                }
                 _ => {}
             }
             return 0;

@@ -219,7 +219,8 @@ Windows tray mode, minimize-on-close, Ctrl+Alt+M, full native font selection,
 filter-field suggestions, and the optional debug log are implemented. Enable
 tray mode in Options; close-to-tray applies only while its icon is available.
 Double-click the icon or press Ctrl+Alt+M to restore. File > Exit or the tray's
-Exit always quits. A shortcut already owned by todotxt.net or another program
+Exit always quits. Right-click the notification-area icon near the clock to
+open its Exit menu. A shortcut already owned by todotxt.net or another program
 produces a visible error; the tray remains usable. The icon is recreated after
 Explorer restarts, with window restoration if that fails.
 
@@ -264,7 +265,9 @@ Windows). `scripts/smoke-windows.ps1` exercises actual Win32 controls, editor
 Enter/save, task completion, native dialog Enter, owned Options/font dialogs, filter suggestions, printer cancellation, tray
 minimize/restore/close, calendar, and external change refusal with retained drafts against an isolated fictional fixture copy, and captures
 a screenshot. It also verifies width/height reflow, maximize, taskbar minimize,
-and restore. See [the parity assessment](docs/PARITY.md) for remaining work.
+and restore, plus right-click tray Exit while hidden. Add `-PhysicalHotkey`
+to verify Ctrl+Alt+M through Windows keyboard input on an interactive desktop.
+See [the parity assessment](docs/PARITY.md) for remaining work.
 Linux CI is configured; a Linux desktop
 run still needs verification.
 

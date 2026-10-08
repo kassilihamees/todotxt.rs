@@ -1,4 +1,4 @@
-param([string]$Binary = 'target/debug/todotxt-rs.exe')
+param([string]$Binary = 'target/debug/todotxt-rs.exe', [switch]$PhysicalHotkey)
 $ErrorActionPreference = 'Stop'
 # Exercise real Win32 controls against an isolated copy of the sample.
 Add-Type @'
@@ -28,6 +28,30 @@ public class TodoPreview {
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr SendMessage(IntPtr h, uint m, IntPtr w, System.Text.StringBuilder text);
     [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, System.Text.StringBuilder text, int count);
+    [DllImport("user32.dll")] public static extern uint SendInput(uint count, Input[] inputs, int size);
+    [StructLayout(LayoutKind.Sequential)] public struct KeyboardInput { public ushort Key, Scan; public uint Flags, Time; public UIntPtr Extra; }
+    [StructLayout(LayoutKind.Sequential)] public struct MouseInput { public int X, Y; public uint Data, Flags, Time; public UIntPtr Extra; }
+    [StructLayout(LayoutKind.Explicit)] public struct InputData { [FieldOffset(0)] public KeyboardInput Keyboard; [FieldOffset(0)] public MouseInput Mouse; }
+    [StructLayout(LayoutKind.Sequential)] public struct Input { public uint Type; public InputData Data; }
+    public static bool CtrlAltM() {
+        var inputs = new Input[6];
+        ushort[] keys = { 0x11, 0x12, 0x4d, 0x4d, 0x12, 0x11 };
+        for (int n = 0; n < inputs.Length; n++) { inputs[n].Type = 1; inputs[n].Data.Keyboard.Key = keys[n]; inputs[n].Data.Keyboard.Flags = n >= 3 ? 2u : 0u; }
+        return SendInput(6, inputs, Marshal.SizeOf(typeof(Input))) == 6;
+    }
+    [DllImport("user32.dll")] public static extern int GetMenuItemCount(IntPtr menu);
+    [DllImport("user32.dll")] public static extern uint GetMenuItemID(IntPtr menu, int position);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetMenuString(IntPtr menu, uint position, System.Text.StringBuilder text, int count, uint flags);
+    public static IntPtr FindMenu(int process) {
+        IntPtr found = IntPtr.Zero;
+        EnumWindows((h, p) => {
+            uint id; GetWindowThreadProcessId(h, out id);
+            var name = new System.Text.StringBuilder(100); GetClassName(h, name, 100);
+            if (id == process && IsWindowVisible(h) && name.ToString() == "#32768") { found = h; return false; }
+            return true;
+        }, IntPtr.Zero);
+        return found;
+    }
     public static IntPtr FindPopup(int process) {
         IntPtr found = IntPtr.Zero;
         EnumWindows((h, p) => {
@@ -178,6 +202,7 @@ try {
     Start-Sleep -Milliseconds 250
     # The running original may own Ctrl+Alt+M; this must surface an error without disabling the tray.
     $popup = [TodoPreview]::FindPopup($process.Id)
+    $hotkeyAvailable = (Control-Class $popup) -ne '#32770'
     if ((Control-Class $popup) -eq '#32770') { [void][TodoPreview]::PostMessage($popup, 0x10, [IntPtr]::Zero, [IntPtr]::Zero); Await-Condition { ![TodoPreview]::IsWindow($popup) } 'Hotkey conflict error did not close.' }
     [void][TodoPreview]::SendMessage($root, 0x112, [IntPtr]0xF020, [IntPtr]::Zero)
     Await-Condition { [TodoPreview]::IsIconic($root) -and ![TodoPreview]::IsWindowVisible($root) } 'Tray minimization did not hide the taskbar window.'
@@ -187,6 +212,13 @@ try {
     Await-Condition { ![TodoPreview]::IsWindowVisible($root) -and !$process.HasExited } 'Close-to-tray did not retain the application.'
     [void][TodoPreview]::PostMessage($root, 0x312, [IntPtr]1, [IntPtr]::Zero)
     Await-Condition { [TodoPreview]::IsWindowVisible($root) } 'Global hotkey message did not restore the window.'
+    if ($PhysicalHotkey -and $hotkeyAvailable) {
+        if (![TodoPreview]::CtrlAltM()) { throw 'Windows refused Ctrl+Alt+M input injection.' }
+        Await-Condition { ![TodoPreview]::IsWindowVisible($root) } 'Actual Ctrl+Alt+M did not hide the window.'
+        if (![TodoPreview]::CtrlAltM()) { throw 'Windows refused Ctrl+Alt+M input injection.' }
+        Await-Condition { [TodoPreview]::IsWindowVisible($root) } 'Actual Ctrl+Alt+M did not restore the window.'
+        Write-Output 'PASS: actual Ctrl+Alt+M input hid and restored the isolated application.'
+    } elseif ($PhysicalHotkey) { Write-Output 'SKIP: actual Ctrl+Alt+M input; another application owns the shortcut.' }
     [void][TodoPreview]::PostMessage($root, 0x111, [IntPtr]134, [IntPtr]::Zero)
     $title = [Text.StringBuilder]::new(300)
     Await-Condition { [void][TodoPreview]::GetWindowText($root, $title, $title.Capacity); $title.ToString().Contains('Calendar:') } 'Calendar did not update the title.'
@@ -211,7 +243,26 @@ try {
     if (!$log.Contains('DEBUG command 134') -or $log.Contains('Retained native draft')) { throw 'Debug events are missing or include draft text.' }
     [void][TodoPreview]::PostMessage($root, 0x111, [IntPtr]133, [IntPtr]::Zero)
     Await-Condition { $process.HasExited } 'File Exit did not quit with minimize-on-close enabled.'
-    Write-Output 'PASS: native controls, width/height reflow, maximize/minimize/restore, Enter/save, completion, dialog Enter, Options/font dialog, filter suggestions, printer cancellation, tray minimize/restore/close, hotkey routing, calendar, debug logging, forced Exit, external-change refusal/draft preservation, and screenshot.'
+    # Restart the isolated application to test tray Exit independently of File Exit.
+    $process = Start-Process -FilePath ([IO.Path]::GetFullPath($Binary)) -ArgumentList '--demo', '--config-dir', ('"' + $previewProfileDirectory + '"') -WindowStyle Hidden -PassThru
+    Await-Condition { $root = [TodoPreview]::FindRoot($process.Id); $root -ne [IntPtr]::Zero } 'Tray Exit test window did not appear.'
+    $root = [TodoPreview]::FindRoot($process.Id)
+    [void][TodoPreview]::ShowWindow($root, 5)
+    # Right-click must offer a real Exit entry even while the owner is hidden.
+    [void][TodoPreview]::SendMessage($root, 0x112, [IntPtr]0xF020, [IntPtr]::Zero)
+    Await-Condition { ![TodoPreview]::IsWindowVisible($root) } 'Window did not hide before the tray menu check.'
+    # Modern Shell callback: icon ID in the high word, WM_CONTEXTMENU in the low word.
+    [void][TodoPreview]::PostMessage($root, 0x8002, [IntPtr]::Zero, [IntPtr](0x10000 + 0x7B))
+    Await-Condition { [TodoPreview]::FindMenu($process.Id) -ne [IntPtr]::Zero } 'Tray right-click menu did not appear.'
+    $menuWindow = [TodoPreview]::FindMenu($process.Id)
+    $menu = [TodoPreview]::SendMessage($menuWindow, 0x1E1, [IntPtr]::Zero, [IntPtr]::Zero)
+    $menuLabel = [Text.StringBuilder]::new(100)
+    [void][TodoPreview]::GetMenuString($menu, 0, $menuLabel, $menuLabel.Capacity, 0x400)
+    if ([TodoPreview]::GetMenuItemID($menu, 0) -ne 133 -or $menuLabel.ToString().Replace('&', '') -ne 'Exit') { throw 'Tray menu is missing Exit.' }
+    [void][TodoPreview]::PostMessage($root, 0x100, [IntPtr]40, [IntPtr]::Zero)
+    [void][TodoPreview]::PostMessage($root, 0x100, [IntPtr]13, [IntPtr]::Zero)
+    Await-Condition { $process.HasExited } 'Tray Exit did not quit with minimize-on-close enabled.'
+    Write-Output 'PASS: native controls, width/height reflow, maximize/minimize/restore, Enter/save, completion, dialog Enter, Options/font dialog, filter suggestions, printer cancellation, tray minimize/restore/close, hotkey routing, tray right-click/Exit, calendar, debug logging, forced Exit, external-change refusal/draft preservation, and screenshot.'
 }
 catch { Write-Output ("SMOKE FAILED: " + $_.Exception.Message); throw }
 finally {
