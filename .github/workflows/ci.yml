@@ -1,0 +1,28 @@
+name: Rust
+on: [push, pull_request]
+jobs:
+  check:
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Linux desktop libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev
+      - run: cargo fmt --check
+      - run: cargo test --locked
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Optional Windows portable frontend
+        if: runner.os == 'Windows'
+        run: |
+          cargo test --locked --features portable-ui
+          cargo clippy --locked --all-targets --features portable-ui -- -D warnings
+      - run: cargo build --locked --release
+      - name: Native Windows controls and file safety
+        if: runner.os == 'Windows'
+        run: ./scripts/smoke-windows.ps1 -Binary target/release/todotxt-rs.exe

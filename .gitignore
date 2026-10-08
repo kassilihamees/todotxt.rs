@@ -1,0 +1,14 @@
+/target
+/reference/
+/.local/
+/samples/
+/docs/screenshots/*
+!/docs/screenshots/README.md
+/.playwright-mcp/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx

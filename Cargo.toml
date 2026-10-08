@@ -1,0 +1,38 @@
+[package]
+name = "todotxt-rs"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "A cross-platform Rust port of todotxt.net"
+license = "BSD-2-Clause"
+
+[features]
+default = []
+portable-ui = ["dep:eframe", "dep:rfd", "dep:arboard"]
+
+[dependencies]
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+directories = "6"
+regex = "1"
+tempfile = "3"
+open = "5"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_LibraryLoader", "Win32_System_Memory", "Win32_System_DataExchange", "Win32_UI_Controls", "Win32_UI_Controls_Dialogs", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+eframe = { version = "0.33.3", optional = true, default-features = false, features = ["default_fonts", "glow", "persistence", "accesskit"] }
+rfd = { version = "0.17.2", optional = true }
+arboard = { version = "3", optional = true }
+
+[target.'cfg(not(windows))'.dependencies]
+eframe = { version = "0.33.3", default-features = false, features = ["default_fonts", "glow", "x11", "wayland", "persistence", "accesskit"] }
+rfd = "0.17.2"
+arboard = "3"
+
+[profile.release]
+lto = "thin"
+strip = true
+
+[build-dependencies]
+embed-resource = "3.0.6"

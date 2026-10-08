@@ -1,0 +1,120 @@
+# Progress
+
+## Fresh repository preparation (2026-10-08)
+
+- The owner deleted the previous GitHub repository after its old commit URLs
+  continued to expose the removed sample. Prepared one parentless initial commit
+  containing the cleaned project and fictional fixture.
+- Reviewed all tracked files for known original task lines, likely credential
+  strings, local user paths, screenshots and build/local artifacts. No matches
+  were found. The icon matches the public upstream source.
+- Use the owner's GitHub no-reply address for the new commit. Ignore the whole
+  samples and screenshots directories, browser automation output, environment
+  files and common private-key file types to reduce accidental publication.
+
+## Personal sample removal (2026-10-08)
+
+- Replaced the personal sample with a fictional demo fixture. Updated both
+  frontends and the fixture regression test; no real tasks are bundled now.
+- Removed personal screenshots and blocked the old sample path and screenshot
+  PNG files in Git ignore rules. Working rules prohibit publishing real tasks.
+- Purged the personal sample and screenshots from every published commit and
+  force-pushed the cleaned master branch with an explicit lease. Removed local
+  tool snapshot references and pruned the original sensitive Git objects.
+- Verified all rewritten commits for removed paths, original task text, and
+  private screenshot blobs. GitHub had no forks, PRs, releases, or uploaded build
+  artifacts requiring separate cleanup. Local cleanup notes contain no task data.
+- Fictional fixture validation passed: 22 tests, strict Clippy, release build,
+  and native Windows smoke flows including reflow and external-change safety.
+- Old clones must be replaced or cleaned; merging old history could reintroduce
+  the removed data. GitHub caches are outside this rewrite and were not pursued.
+
+## Resize regression and parity assessment (2026-10-08)
+
+- Reproduced the reported native resize failure. Default Win32 processing
+  synchronously sends WM_SIZE, but our handler retained the mutable application
+  borrow and skipped that nested notification. Released state before calling
+  DefWindowProc so width/height changes and maximizing relayout controls.
+- Skip zero-size minimized layouts and compare the actual list client width
+  before reflowing task text. Height-only changes retain the task viewport and
+  update status layout. Wrapping remains controlled by its existing preference.
+- Extended the native smoke check with width changes, measured wrapped-row
+  heights, height changes, maximize, taskbar minimize, restore to the preceding
+  maximized state, and restore to normal. It passes against the rebuilt release,
+  alongside task/editor/dialog and external-change safety checks.
+- Formatting, 16 default tests, strict Clippy, and release build passed.
+- Added a parity status table. Ordinary taskbar minimization is verified;
+  tray/minimize-on-close/global hotkey remain missing. Full parity and Linux
+  runtime validation are still outstanding. No deferred feature was started.
+
+## Deferred requests (2026-10-08)
+
+- Recorded CLI operations, recurring tasks, OR filters, safe external-change
+  reconciliation/history/conflict dialogs, prompt reload with cloud/rclone
+  fallbacks, and an Android-first mobile companion in `BACKLOG.md`.
+- Added the parity-first restriction to working rules and clarified that
+  current filters only support AND. Documentation only; none implemented.
+
+## Native Windows frontend (2026-10-08)
+
+- Windows now defaults to a Win32 frontend. Real OS menus, EDIT, owner-drawn
+  LISTBOX, native selection/scrollbars, status bar, file pickers, and separate
+  owned dialogs replace egui controls. Styled task text uses GDI/Segoe UI.
+- Added themed Common Controls v6, the upstream ICO in the executable, and
+  per-monitor DPI awareness. Native window geometry uses `native-window.json`.
+- Kept the Linux egui frontend and optional Windows `portable-ui` fallback.
+  Windows default dependency tree excludes egui/eframe/rfd/arboard/glutin.
+- Shared preference schema and existing task/file library preserve behavior.
+  Added controller regressions for retained drafts after external changes,
+  safe reload/retry, physical duplicate identity, and shared preferences.
+- Fixed Win32 reentry during window destruction and routed queued keyboard
+  events by their target control rather than later focus state.
+- Passed 16 default tests and 22 tests with the portable frontend enabled;
+  strict Clippy passed for both configurations. Formatting and release build
+  passed on Windows. Linux runtime remains unverified.
+- Release smoke check passed against real controls: Enter/save, completion,
+  Enter in an owned task dialog, native Options, external-change error dialog,
+  unchanged external bytes, retained draft, screenshot, and clean shutdown.
+  CI now includes that native Windows smoke check.
+- Release executable: `target/release/todotxt-rs.exe`, 2,838,016 bytes.
+  Updated README/help/parity rules and `docs/screenshots/rust.png`.
+- Upstream remains unmodified.
+
+## Initial portable frontend
+
+- Created project working rules and parity specification.
+- Cloned upstream dev branch into reference/todotxt.net.
+- Found the running Windows original (todotxt.exe).
+- Inspected task parsing, file IO, menu/editor/list XAML, sorting and filters.
+- Built the Rust Cargo package, standalone task/file/view library, and native
+  egui desktop application. Windows Segoe UI regular/bold fonts and the upstream
+  icon are used; Linux has system/embedded font fallbacks.
+- Implemented task CRUD, multiselection/clipboard, completion, priority/date
+  changes, archive, eight sorts, multi-tag grouping, filters/presets, editor
+  suggestions, preferences, auto refresh, status counts, help and printable HTML.
+- Added user-facing README and embedded help covering actual features, safe
+  default demo copying, external-change refusal/recovery, archive partial
+  failures, file preservation, settings locations, and known fidelity gaps.
+- Added a Windows native preview/capture script and Windows/Linux CI checks.
+- 19 tests passed on Windows (13 library/file/parity regressions and 6 GUI-event
+  tests). GUI tests cover keyboard task flows, dialog focus, date entry,
+  Ctrl-Enter, suggestions, preserved drafts and reload safety, and status paint.
+- Final validation passed: `cargo fmt --check`, `cargo test --locked` (19 tests),
+  `cargo clippy --locked --all-targets -- -D warnings`, and
+  `cargo build --locked --release`.
+- A GUI regression caught Enter surrendering editor focus in Ctrl-Enter mode;
+  fixed it and verified plain Enter keeps the draft editable and Ctrl-Enter saves.
+- Release executable built at `target/release/todotxt-rs.exe` (8,497,664 bytes).
+  The isolated native preview script passed against this release build and
+  captured `docs/screenshots/rust.png`; the preview closed cleanly afterward.
+- Native window launch and visual capture verified. Native keyboard automation
+  was unreliable in this host session; GUI-event tests are the keyboard evidence.
+- No Linux distribution is available in the host's WSL installation. Linux CI
+  configuration is present but has not been run or claimed as passed.
+- Upstream checkout remains clean. The initial personal sample was later removed
+  and replaced by fictional data; see the privacy cleanup entry above.
+
+The first working port is ready for manual Windows/Linux use. Remaining parity
+work is tracked in `PARITY.md` and the root README, particularly tray/global
+hotkey behavior and exact widget/wrapping metrics. No full-parity or Linux-runtime
+claim is made.

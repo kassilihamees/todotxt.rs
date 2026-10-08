@@ -1,0 +1,16 @@
+(A) 2026-01-01 Review the fictional launch checklist +demo @desk
+(A) 2026-01-02 Write a short welcome message +demo @writing
+(B) 2026-01-03 Buy apples and tea for an imaginary picnic +personal @errands
+(B) 2026-01-04 Compare sample interface layouts and confirm that this deliberately long fictional task wraps correctly when the application window is made narrow +demo @desk
+(C) 2026-01-05 Read the todo.txt format documentation https://example.org/documentation/fictional-project/sample-tasks-and-formatting-guide +demo @reading
+(C) 2026-01-06 Test Unicode text: café, naïve, 日本語 +demo @desk
+(D) 2026-01-07 Sort the pretend bookshelf +personal @home
+(D) 2026-01-08 Plan a fictional workshop +demo +learning @planning
+(E) 2026-01-09 Sketch an imaginary garden +personal @home
+(E) 2026-01-10 Practice a sample presentation +learning @desk
+2026-01-11 Check this ordinary task without a priority +demo @desk
+2026-01-12 Add a made-up project and context to the demo +learning @planning
+2026-01-13 Try a task with a future threshold t:2099-01-01 +demo
+2026-01-14 Try an explicitly hidden example h:1 +demo
+x 2026-01-15 2026-01-01 Finish the fictional setup checklist +demo @desk
+x 2026-01-16 2026-01-02 Confirm that completed sample tasks are struck through +demo @desk
