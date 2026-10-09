@@ -106,17 +106,23 @@ fn atomic_write_checked(
     temp.as_file().sync_all()?;
     let (file, staged) = temp.into_parts();
     drop(file);
-    if fs::read(&staged)? != bytes {
-        return Err(invalid(
-            "Save refused: the staged file did not retain its contents.",
-        ));
+    let staged_bytes = fs::read(&staged)?;
+    if staged_bytes != bytes {
+        return Err(invalid(format!(
+            "Save refused: the staged file did not retain its contents (expected {} bytes, read {}).",
+            bytes.len(),
+            staged_bytes.len()
+        )));
     }
     before_replace()?;
     replace(staged, path)?;
-    if fs::read(path)? != bytes {
-        return Err(invalid(
-            "Save verification failed: the filesystem did not retain the written contents.",
-        ));
+    let saved_bytes = fs::read(path)?;
+    if saved_bytes != bytes {
+        return Err(invalid(format!(
+            "Save verification failed: the filesystem did not retain the written contents (expected {} bytes, read {}).",
+            bytes.len(),
+            saved_bytes.len()
+        )));
     }
     Ok(())
 }

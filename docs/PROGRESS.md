@@ -1,5 +1,28 @@
 # Progress
 
+## Affected-computer storage probe (2026-10-09)
+
+- The maintainer clarified that failures are on another computer. Earlier
+  observations of processes, executable paths and volume junctions on this
+  development machine do not explain that computer's errors.
+- A subsequent affected-machine log confirms native 0.1.2-dev caught a save
+  verification failure and retained recovery snapshots. Staging verification
+  passed; destination read-back after replacement mismatched. The cause remains
+  unresolved, and this is not an old-build explanation for that attempt.
+- Added a standalone storage probe that creates only new fictional files in a
+  unique directory. Compare direct writes, the current tempfile persistence,
+  normal-file renames and Windows ReplaceFile; check immediate/delayed bytes.
+  Retain a report separately under the user's local data directory. Neither
+  task contents nor existing filenames enter the report.
+- Added expected/read byte counts to save-verification errors. No automatic
+  retry, in-place fallback, live-file test or cloud-cache reconfiguration.
+- Formatting, 30 task/file tests and strict all-target Clippy pass on Windows.
+  Diagnostic release build and ordinary-local-storage control pass; affected
+  machine results and rclone version/mount options are still required.
+- Documented transport/run instructions and limits in STORAGE-DIAGNOSTICS.md.
+  The v0.1.2-dev prerelease is diagnostic only, with no GUI application binary
+  and no claim that mounted saving has been repaired.
+
 ## Delayed empty reload and build identification (2026-10-09)
 
 - A further report showed completion followed by reload within a second and

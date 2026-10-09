@@ -49,6 +49,10 @@ After a further report, both public milestones carry mounted-file warnings.
 0.1.2-dev protects against a delayed empty reload and exposes its running
 version, but the underlying mounted-save failure remains unresolved. Use an
 ordinary local task file while investigating.
+The affected computer has since confirmed a native 0.1.2-dev save-verification
+failure. Development-machine process/volume observations do not diagnose that
+computer. A diagnostic-only probe is described in `STORAGE-DIAGNOSTICS.md`;
+its affected-machine results are pending.
 
 | Area | Current status |
 | --- | --- |
