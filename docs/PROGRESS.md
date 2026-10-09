@@ -1,5 +1,16 @@
 # Progress
 
+## First release milestone (2026-10-09)
+
+- Marked the native Windows milestone as the regular v0.1.0 release, rather than
+  claiming complete parity. Release notes describe actual features, local
+  validation, deferred requests and remaining Windows/Linux gaps.
+- Packaged the native Windows x86-64 executable with README, help, license,
+  upstream asset attribution and release notes, plus a SHA-256 checksum file.
+  No personal tasks, settings, screenshots or local profiles are included.
+- GitHub-hosted CI remains unverified. Local Windows validation is recorded
+  separately; no successful Linux run is claimed.
+
 ## Archive destination picker and deferred shortcut (2026-10-09)
 
 - Recorded Ctrl+D first in BACKLOG, with a conflict recheck, displayed default

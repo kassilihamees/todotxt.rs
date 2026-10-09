@@ -5,6 +5,11 @@ targeting Windows and Linux. It follows the original's compact menu bar, one-lin
 editor, raw-text task list, keyboard navigation, grouping, and status counts.
 This is a working first port; the remaining differences are listed below.
 
+The first Windows milestone is [v0.1.0](https://github.com/kassilihamees/todotxt.rs/releases/tag/v0.1.0).
+Download its Windows x86-64 ZIP, extract it, and run `todotxt-rs.exe`.
+See the [release notes](docs/releases/v0.1.0.md) for validation and known gaps.
+Version numbers are independent of the reference todotxt.net 3.3.1.0.
+
 **Windows uses Win32 controls by default:** OS menus, a standard edit box with
 Windows text selection and undo, native list selection and scrollbars, a status
 bar, native file pickers, and separate owned Options/filter/task dialogs. Only
@@ -14,7 +19,8 @@ Linux retains the portable egui frontend. Both use the same Rust task/file
 library and preference format.
 Windows controls resize with the window, including maximize/restore. Task text
 reflows when word wrap is enabled; ordinary taskbar minimization is supported.
-System-tray minimization remains a parity gap.
+Windows system-tray minimization, close-to-tray and tray Exit are implemented;
+Linux tray integration remains a parity gap.
 
 ## Run
 
