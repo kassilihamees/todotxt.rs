@@ -5,9 +5,10 @@ targeting Windows and Linux. It follows the original's compact menu bar, one-lin
 editor, raw-text task list, keyboard navigation, grouping, and status counts.
 This is a working first port; the remaining differences are listed below.
 
-The first Windows milestone is [v0.1.0](https://github.com/kassilihamees/todotxt.rs/releases/tag/v0.1.0).
+The current Windows release is [v0.1.1](https://github.com/kassilihamees/todotxt.rs/releases/tag/v0.1.1).
 Download its Windows x86-64 ZIP, extract it, and run `todotxt-rs.exe`.
-See the [release notes](docs/releases/v0.1.0.md) for validation and known gaps.
+See the [release notes](docs/releases/v0.1.1.md) for validation and known gaps.
+v0.1.0 has a reported mounted-drive data-loss issue; use the newer release.
 Version numbers are independent of the reference todotxt.net 3.3.1.0.
 
 **Windows uses Win32 controls by default:** OS menus, a standard edit box with
@@ -180,10 +181,28 @@ To recover:
 
 Automatic refresh is optional and initially disabled. When enabled, it reloads
 external changes about once a second while the editor is empty and no dialog
-is open. It pauses while a draft is being entered.
+is open. It pauses while a draft is being entered and after a failed document save.
 
-Writes use a synced temporary file in the same directory followed by replacement,
-so a failed write does not leave a partially written todo file. Existing file
+Writes sync and close a temporary file in the same directory, read its bytes
+back, recheck the source, replace the destination, and read the destination back.
+A successful filesystem return alone is not accepted as proof that saving worked.
+Before document or archive replacement, local recovery copies retain the previous
+and intended contents under the user's local data directory. Windows uses
+`%LOCALAPPDATA%\todotxt.rs\data\recovery`; Linux uses
+`${XDG_DATA_HOME:-~/.local/share}/todotxt.rs/recovery`. The per-file folders contain
+`previous.txt` and `intended.txt`, refreshed before each save. Failed operations
+also retain separate `failed-*` snapshots, which are not automatically deleted.
+Recovery copies contain task data; keep them private, and do not commit them.
+
+If save verification fails, the application keeps its previous in-memory tasks,
+pauses automatic refresh, and reports the recovery folder. Check the on-disk file
+and restore the appropriate recovery copy before explicitly reloading. It does
+not automatically overwrite an uncertain destination again. These copies are
+basic recovery protection, not automatic conflict merging or version control.
+
+Mounted/cloud filesystem drivers can still violate replacement semantics or
+delay remote uploads. Read-back verification checks the mounted view, not the
+remote cloud's eventual state; continue to keep independent backups. Existing file
 permission flags are retained (Unix mode bits or the Windows read-only flag);
 replacement does not preserve every OS-specific attribute or ACL. This is
 conflict detection, not a lock shared with

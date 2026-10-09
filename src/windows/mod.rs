@@ -504,6 +504,11 @@ unsafe extern "system" fn window_proc(
             if app.model.settings.auto_refresh
                 && app.model.editing.is_none()
                 && window_text(app.editor).is_empty()
+                && app
+                    .model
+                    .document
+                    .as_ref()
+                    .is_some_and(|doc| doc.can_auto_reload())
             {
                 let changed = app.model.document.as_ref().map(|d| d.changed()).transpose();
                 match changed {

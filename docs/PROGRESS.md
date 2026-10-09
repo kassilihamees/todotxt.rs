@@ -1,5 +1,30 @@
 # Progress
 
+## Mounted-save safety update (2026-10-09)
+
+- A real-file completion on a Windows rclone mount was reported to immediately
+  leave the source empty, with auto archive off and auto refresh on. Prior
+  mount validation covered loading, not real mounted saves. Marked v0.1.0 as
+  a prerelease with a critical warning; its tag/source state remain unchanged.
+- Isolated old-writer tests succeeded on freshly cached files and fictional
+  files uploaded directly to the remote. The precise cause is unconfirmed.
+- Close the staged writer before replacement; verify staged and destination
+  bytes; recheck source/archive before replacement. Never silently fall back
+  to truncating the existing file in place.
+- Before document/archive replacement, preserve local previous/intended copies.
+  Failed saves also retain separate snapshots, keep in-memory tasks, and pause
+  automatic refresh. This narrowly scoped data-loss recovery is necessary for
+  this incident; deferred merge/conflict/version-control ideas remain deferred.
+- Four new regressions cover false successful replacement with truncation,
+  immutable failed-save recovery snapshots, successful completion recovery,
+  closed staged handles and changes during staging. All 27 task/file tests
+  and seven portable GUI tests pass, with strict Clippy for both frontends.
+- Native GUI smoke passed. Ten actual native completion toggles on an isolated
+  fictional rclone file passed with auto refresh enabled. The live source was
+  only inspected for size; its contents were neither printed nor modified.
+- Documented recovery, privacy, delayed-upload limits and unconfirmed cause in
+  README/help and v0.1.1 release notes. Linux runtime remains unverified.
+
 ## First release milestone (2026-10-09)
 
 - Marked the native Windows milestone as the regular v0.1.0 release, rather than

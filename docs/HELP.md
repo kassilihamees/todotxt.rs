@@ -58,6 +58,13 @@ If another program changes the source file, a write is refused and editor text i
 Copy your draft if needed, reload with F5, reselect the task, then reapply your edit.
 Reload cancels the edit target so an old line number cannot overwrite a different task.
 Options can enable automatic refresh when the editor is empty.
+Saving closes and verifies the staged file, rechecks the source, and verifies
+the resulting destination. Local recovery copies retain previous and intended
+task contents before replacement. On Windows these are under
+%LOCALAPPDATA%\todotxt.rs\data\recovery. A failed save keeps the in-memory
+tasks, pauses automatic refresh, and reports the recovery folder. Check or
+restore the disk file before explicitly reloading. Cloud uploads can be delayed;
+verification of the mounted view does not verify eventual remote storage.
 Windows Options archive selection only sets a destination; it leaves existing
 contents unchanged. Archiving appends completed tasks to that destination.
 Archive writes done.txt first. If removing tasks from todo.txt fails, duplicates can

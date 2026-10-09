@@ -39,6 +39,13 @@ Core task/file functionality is implemented and covered by regression tests;
 full application parity has not been achieved. A percentage would imply a
 complete feature audit and validation that we do not yet have.
 
+v0.1.0 has a reported Windows rclone mounted-save data-loss issue and is marked
+with a critical warning. v0.1.1 closes staged writers before replacement,
+verifies saved bytes, and keeps local recovery copies. Ten isolated native
+mounted completion toggles passed with automatic refresh enabled; the original
+failure's precise cause remains unconfirmed. Remote upload durability is not
+proved by successful read-back from a mount. See `releases/v0.1.1.md`.
+
 | Area | Current status |
 | --- | --- |
 | Task editing, completion, priorities/dates, archive, sorts, grouping, filters/presets | Implemented; task/file tests and selected GUI flows pass |

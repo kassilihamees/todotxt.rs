@@ -1511,6 +1511,7 @@ impl Desktop {
                 && self.dialog.is_none()
                 && self.error.is_none()
                 && let Some(doc) = &self.document
+                && doc.can_auto_reload()
             {
                 match doc.changed() {
                     Ok(true) => self.action(Action::Reload, ctx),

@@ -11,6 +11,24 @@ fn invalid(message: impl Into<String>) -> io::Error {
     io::Error::other(message.into())
 }
 
+fn preserve_failed_recovery(directory: &Path) -> PathBuf {
+    let snapshot = (|| -> io::Result<PathBuf> {
+        let folder = tempfile::Builder::new()
+            .prefix("failed-")
+            .tempdir_in(directory)?;
+        fs::copy(
+            directory.join("previous.txt"),
+            folder.path().join("previous.txt"),
+        )?;
+        fs::copy(
+            directory.join("intended.txt"),
+            folder.path().join("intended.txt"),
+        )?;
+        Ok(folder.keep())
+    })();
+    snapshot.unwrap_or_else(|_| directory.to_owned())
+}
+
 // Virtual mounts can read files without supporting final-path/volume queries.
 // Keep symlink resolution where available, but never require it for ordinary IO.
 fn resolved_path(
@@ -59,8 +77,23 @@ fn same_path(a: &Path, b: &Path) -> bool {
     }
 }
 
-/// Same-directory replace, so a interrupted write never leaves a truncated todo file.
+/// Stage, close, verify, replace, then verify again. Mounted filesystems may
+/// mishandle renaming a file while its write handle is still open.
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    atomic_write_checked(
+        path,
+        bytes,
+        || Ok(()),
+        |staged, destination| staged.persist(destination).map_err(|error| error.error),
+    )
+}
+
+fn atomic_write_checked(
+    path: &Path,
+    bytes: &[u8],
+    before_replace: impl FnOnce() -> io::Result<()>,
+    replace: impl FnOnce(tempfile::TempPath, &Path) -> io::Result<()>,
+) -> io::Result<()> {
     let parent = path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -71,7 +104,20 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
     }
     temp.write_all(bytes)?;
     temp.as_file().sync_all()?;
-    temp.persist(path).map_err(|error| error.error)?;
+    let (file, staged) = temp.into_parts();
+    drop(file);
+    if fs::read(&staged)? != bytes {
+        return Err(invalid(
+            "Save refused: the staged file did not retain its contents.",
+        ));
+    }
+    before_replace()?;
+    replace(staged, path)?;
+    if fs::read(path)? != bytes {
+        return Err(invalid(
+            "Save verification failed: the filesystem did not retain the written contents.",
+        ));
+    }
     Ok(())
 }
 
@@ -83,6 +129,8 @@ pub struct Document {
     newline: String,
     final_newline: bool,
     bom: bool,
+    recovery_root: PathBuf,
+    failed_save: bool,
 }
 
 impl Document {
@@ -118,6 +166,10 @@ impl Document {
             newline,
             final_newline,
             bom,
+            recovery_root: directories::ProjectDirs::from("", "", "todotxt.rs")
+                .map(|dirs| dirs.data_local_dir().join("recovery"))
+                .unwrap_or_else(|| std::env::temp_dir().join("todotxt-rs-recovery")),
+            failed_save: false,
         })
     }
 
@@ -132,6 +184,10 @@ impl Document {
 
     pub fn changed(&self) -> io::Result<bool> {
         Ok(fs::read(&self.path)? != self.original)
+    }
+
+    pub fn can_auto_reload(&self) -> bool {
+        !self.failed_save
     }
 
     fn ensure_unchanged(&self) -> io::Result<()> {
@@ -158,12 +214,44 @@ impl Document {
     }
 
     fn commit(&mut self, lines: Vec<String>) -> io::Result<()> {
+        self.commit_with(lines, |staged, destination| {
+            staged.persist(destination).map_err(|error| error.error)
+        })
+    }
+
+    fn commit_with(
+        &mut self,
+        lines: Vec<String>,
+        replace: impl FnOnce(tempfile::TempPath, &Path) -> io::Result<()>,
+    ) -> io::Result<()> {
         self.ensure_unchanged()?;
         let bytes = self.encoded(&lines);
-        atomic_write(&self.path, &bytes)?;
+        let recovery = self.recovery_copy(&self.path, &self.original, &bytes)?;
+        if let Err(error) =
+            atomic_write_checked(&self.path, &bytes, || self.ensure_unchanged(), replace)
+        {
+            self.failed_save = true;
+            let recovery = preserve_failed_recovery(&recovery);
+            return Err(invalid(format!(
+                "{error}\nLocal recovery copies are in {}. previous.txt contains the file before this save; intended.txt contains the attempted save. Automatic refresh is paused. Check or restore the disk file before reloading.",
+                recovery.display()
+            )));
+        }
         self.lines = lines;
         self.original = bytes;
+        self.failed_save = false;
         Ok(())
+    }
+
+    fn recovery_copy(&self, path: &Path, previous: &[u8], intended: &[u8]) -> io::Result<PathBuf> {
+        use std::hash::{Hash, Hasher};
+        let mut key = std::collections::hash_map::DefaultHasher::new();
+        path.hash(&mut key);
+        let directory = self.recovery_root.join(format!("{:016x}", key.finish()));
+        fs::create_dir_all(&directory)?;
+        atomic_write(&directory.join("previous.txt"), previous)?;
+        atomic_write(&directory.join("intended.txt"), intended)?;
+        Ok(directory)
     }
 
     pub fn add(&mut self, raw: &str) -> io::Result<usize> {
@@ -228,6 +316,7 @@ impl Document {
             Err(e) if e.kind() == io::ErrorKind::NotFound => Vec::new(),
             Err(e) => return Err(e),
         };
+        let previous_archive = archived.clone();
         let archive_newline =
             if archived.contains(&b'\n') && !archived.windows(2).any(|w| w == b"\r\n") {
                 "\n"
@@ -242,7 +331,33 @@ impl Document {
             archived.extend(archive_newline.as_bytes());
         }
         // Archive first: failure removing from source can duplicate tasks, but cannot lose them.
-        atomic_write(&target, &archived)?;
+        let recovery = self.recovery_copy(&target, &previous_archive, &archived)?;
+        atomic_write_checked(
+            &target,
+            &archived,
+            || {
+                self.ensure_unchanged()?;
+                let current = match fs::read(&target) {
+                    Ok(bytes) => bytes,
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => Vec::new(),
+                    Err(error) => return Err(error),
+                };
+                if current != previous_archive {
+                    return Err(invalid(
+                        "The archive file changed outside the application. Archiving was refused.",
+                    ));
+                }
+                Ok(())
+            },
+            |staged, destination| staged.persist(destination).map_err(|error| error.error),
+        )
+        .map_err(|error| {
+            let recovery = preserve_failed_recovery(&recovery);
+            invalid(format!(
+                "{error}\nArchive recovery copies are in {}. The todo file has not been changed.",
+                recovery.display()
+            ))
+        })?;
         self.replace(&completed).map_err(|e| {
             invalid(format!(
                 "Tasks were copied to the archive but could not be removed from todo.txt: {e}"
@@ -258,6 +373,120 @@ mod mount_tests {
 
     fn unsupported_volume(_: &Path) -> io::Result<PathBuf> {
         Err(io::Error::from_raw_os_error(1005))
+    }
+
+    #[test]
+    fn reported_success_with_truncated_destination_is_an_error_with_recovery() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("todo.txt");
+        let original = b"\xef\xbb\xbfFirst fictional task\r\nSecond fictional task\r\n";
+        fs::write(&path, original).unwrap();
+        let mut doc = Document::open(&path).unwrap();
+        doc.recovery_root = dir.path().join("local-recovery");
+        let lines = vec![
+            "x 2026-10-09 First fictional task".into(),
+            "Second fictional task".into(),
+        ];
+        let intended = doc.encoded(&lines);
+        let error = doc
+            .commit_with(lines, |_staged, destination| fs::write(destination, []))
+            .unwrap_err();
+        assert!(error.to_string().contains("verification failed"));
+        assert!(fs::read(&path).unwrap().is_empty());
+        assert_eq!(doc.original, original);
+        assert_eq!(doc.lines, ["First fictional task", "Second fictional task"]);
+        assert!(!doc.can_auto_reload());
+        let root = fs::read_dir(&doc.recovery_root)
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        let failed = fs::read_dir(&root)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| path.is_dir())
+            .unwrap();
+        assert_eq!(fs::read(failed.join("previous.txt")).unwrap(), original);
+        assert_eq!(fs::read(failed.join("intended.txt")).unwrap(), intended);
+        // A later explicit reload/save must not overwrite the failed-save evidence.
+        let mut reopened = Document::open(&path).unwrap();
+        reopened.recovery_root = doc.recovery_root;
+        reopened.add("Another fictional task").unwrap();
+        assert_eq!(fs::read(failed.join("previous.txt")).unwrap(), original);
+        assert_eq!(fs::read(failed.join("intended.txt")).unwrap(), intended);
+    }
+
+    #[test]
+    fn successful_completion_keeps_a_local_previous_and_intended_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("todo.txt");
+        let original = b"First fictional task\r\nSecond fictional task\r\n";
+        fs::write(&path, original).unwrap();
+        let mut doc = Document::open(&path).unwrap();
+        doc.recovery_root = dir.path().join("local-recovery");
+        let done = Task::parse(
+            "First fictional task",
+            NaiveDate::from_ymd_opt(2026, 10, 9).unwrap(),
+        )
+        .toggle(NaiveDate::from_ymd_opt(2026, 10, 9).unwrap());
+        doc.replace(&BTreeMap::from([(0, Some(done))])).unwrap();
+        let saved = fs::read(&path).unwrap();
+        assert_eq!(
+            saved,
+            b"x 2026-10-09 First fictional task\r\nSecond fictional task\r\n"
+        );
+        assert!(doc.can_auto_reload());
+        let folder = fs::read_dir(&doc.recovery_root)
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        assert_eq!(fs::read(folder.join("previous.txt")).unwrap(), original);
+        assert_eq!(fs::read(folder.join("intended.txt")).unwrap(), saved);
+    }
+
+    #[test]
+    fn staging_rechecks_external_changes_before_replacement() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("todo.txt");
+        fs::write(&path, "Original fictional task").unwrap();
+        let error = atomic_write_checked(
+            &path,
+            b"Intended fictional edit",
+            || {
+                fs::write(&path, "External fictional edit")?;
+                Err(invalid("changed outside"))
+            },
+            |_, _| panic!("Must not replace after the precondition failed"),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("changed outside"));
+        assert_eq!(fs::read(&path).unwrap(), b"External fictional edit");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn staged_write_handle_is_closed_before_replacement() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("todo.txt");
+        atomic_write_checked(
+            &path,
+            b"Fictional content",
+            || Ok(()),
+            |staged, destination| {
+                let exclusive = fs::OpenOptions::new()
+                    .read(true)
+                    .share_mode(0)
+                    .open(&staged)?;
+                drop(exclusive);
+                staged.persist(destination).map_err(|error| error.error)
+            },
+        )
+        .unwrap();
+        assert_eq!(fs::read(path).unwrap(), b"Fictional content");
     }
 
     #[test]
