@@ -8,12 +8,39 @@ pub(super) unsafe fn file_if_needed(
     name: &str,
 ) -> io::Result<Option<PathBuf>> {
     if needed {
-        file(parent, true, name)
+        archive_file(parent, name)
     } else {
         Ok(None)
     }
 }
 pub(super) unsafe fn file(parent: HWND, save: bool, name: &str) -> io::Result<Option<PathBuf>> {
+    select_file(
+        parent,
+        if save {
+            FilePurpose::NewTodo
+        } else {
+            FilePurpose::OpenTodo
+        },
+        name,
+    )
+}
+
+unsafe fn archive_file(parent: HWND, name: &str) -> io::Result<Option<PathBuf>> {
+    select_file(parent, FilePurpose::Archive, name)
+}
+
+enum FilePurpose {
+    OpenTodo,
+    NewTodo,
+    Archive,
+}
+
+unsafe fn select_file(
+    parent: HWND,
+    purpose: FilePurpose,
+    name: &str,
+) -> io::Result<Option<PathBuf>> {
+    let save = !matches!(purpose, FilePurpose::OpenTodo);
     let mut buffer = vec![0u16; 32768];
     if save {
         let name = wide(name);
@@ -22,10 +49,10 @@ pub(super) unsafe fn file(parent: HWND, save: bool, name: &str) -> io::Result<Op
     let filter: Vec<u16> = "Text documents (*.txt)\0*.txt\0All files (*.*)\0*.*\0\0"
         .encode_utf16()
         .collect();
-    let title = wide(if save {
-        "Choose text file"
-    } else {
-        "Open todo.txt file"
+    let title = wide(match purpose {
+        FilePurpose::OpenTodo => "Open todo.txt file",
+        FilePurpose::NewTodo => "Choose text file",
+        FilePurpose::Archive => "Select archive file (tasks will be appended)",
     });
     let mut dialog = OPENFILENAMEW {
         lStructSize: size_of::<OPENFILENAMEW>() as u32,
@@ -39,10 +66,10 @@ pub(super) unsafe fn file(parent: HWND, save: bool, name: &str) -> io::Result<Op
         Flags: OFN_EXPLORER
             | OFN_NOCHANGEDIR
             | OFN_PATHMUSTEXIST
-            | if save {
-                OFN_OVERWRITEPROMPT
-            } else {
-                OFN_FILEMUSTEXIST
+            | match purpose {
+                FilePurpose::OpenTodo => OFN_FILEMUSTEXIST,
+                FilePurpose::NewTodo => OFN_OVERWRITEPROMPT,
+                FilePurpose::Archive => 0,
             },
         ..zeroed()
     };
@@ -638,7 +665,7 @@ unsafe extern "system" fn dialog_proc(hwnd: HWND, msg: u32, wp: usize, lp: isize
                         set_text(*edit, "");
                     }
                 }
-                105 => match file(dialog.hwnd, true, "done.txt") {
+                105 => match archive_file(dialog.hwnd, "done.txt") {
                     Ok(Some(path)) => set_text(dialog.edit, &path.to_string_lossy()),
                     Ok(None) => {}
                     Err(e) => error_box(dialog.hwnd, &e.to_string()),

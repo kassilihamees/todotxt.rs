@@ -1,5 +1,21 @@
 # Progress
 
+## Archive destination picker and deferred shortcut (2026-10-09)
+
+- Recorded Ctrl+D first in BACKLOG, with a conflict recheck, displayed default
+  shortcut, and retained Ctrl+Shift+C alias. No shortcut behavior was changed.
+- Native Windows Options and manual archiving now select existing or new archive
+  destinations without an overwrite confirmation. The picker title explains
+  that tasks will be appended. New File retains its overwrite confirmation.
+  Selecting a destination does not write to it; archive append logic is unchanged.
+  The portable frontend's separate file picker is unchanged.
+- Expanded the real Windows GUI smoke check to select a nonempty fictional
+  archive, verify no confirmation blocks selection, check the Options path,
+  and compare exact file bytes afterward. This and the full native smoke pass.
+- Formatting, all 23 tests, strict Clippy, and the optimized Windows build pass.
+  Updated executable: `target/parity/release/todotxt-rs.exe`; the running normal
+  release was left open. Linux runtime was not tested.
+
 ## Mounted-drive loading fix (2026-10-09)
 
 - Reproduced error 1005 on the maintainer's mounted file without displaying its

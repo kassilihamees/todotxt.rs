@@ -21,6 +21,19 @@ public class TodoPreview {
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
     [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
     [DllImport("user32.dll")] public static extern IntPtr GetDlgItem(IntPtr h, int id);
+    [DllImport("user32.dll")] public static extern bool EnumChildWindows(IntPtr h, EnumWindow callback, IntPtr p);
+    [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr h);
+    public static IntPtr FilenameEdit(IntPtr picker) {
+        IntPtr field = GetDlgItem(picker, 1152);
+        if (field != IntPtr.Zero) return field;
+        IntPtr found = IntPtr.Zero;
+        EnumChildWindows(picker, (h, p) => {
+            var name = new System.Text.StringBuilder(100); GetClassName(h, name, 100);
+            if (name.ToString() == "Edit" && GetDlgCtrlID(h) == 1001) { found = h; return false; }
+            return true;
+        }, IntPtr.Zero);
+        return found;
+    }
     [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr h, uint command);
     [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr h);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr h, System.Text.StringBuilder text, int count);
@@ -157,9 +170,27 @@ try {
     if ((Control-Class ([TodoPreview]::GetDlgItem($dialog, 101))) -ne 'Edit' -or (Control-Class ([TodoPreview]::GetDlgItem($dialog, 200))) -ne 'Button') {
         throw 'Options must use native Edit and Button controls.'
     }
+    # Selecting a nonempty archive must neither ask to overwrite it nor write it.
+    $archive = Join-Path $previewProfileDirectory 'existing-archive.txt'
+    $archiveText = "x 2026-10-01 Fictional archived smoke task`r`n"
+    [IO.File]::WriteAllText($archive, $archiveText)
+    $archiveBytes = [Convert]::ToBase64String([IO.File]::ReadAllBytes($archive))
+    [void][TodoPreview]::PostMessage($dialog, 0x111, [IntPtr]105, [IntPtr]::Zero)
+    Await-Condition { (Control-Class ([TodoPreview]::GetWindow($dialog, 6))) -eq '#32770' } 'Archive picker did not appear.'
+    $picker = [TodoPreview]::GetWindow($dialog, 6)
+    Await-Condition { [TodoPreview]::FilenameEdit($picker) -ne [IntPtr]::Zero } 'Archive filename field did not appear.'
+    [void][TodoPreview]::SendMessage([TodoPreview]::FilenameEdit($picker), 0xC, [IntPtr]::Zero, $archive)
+    [void][TodoPreview]::PostMessage($picker, 0x111, [IntPtr]1, [IntPtr]::Zero)
+    Await-Condition { ![TodoPreview]::IsWindow($picker) } 'Archive selection did not finish directly; an overwrite confirmation may be blocking it.'
+    $archiveSelection = [Text.StringBuilder]::new(32768)
+    Await-Condition {
+        [void][TodoPreview]::SendMessage([TodoPreview]::GetDlgItem($dialog, 101), 0xD, [IntPtr]$archiveSelection.Capacity, $archiveSelection)
+        $archiveSelection.ToString() -eq $archive
+    } 'Options did not receive the selected archive path.'
+    if ([Convert]::ToBase64String([IO.File]::ReadAllBytes($archive)) -ne $archiveBytes) { throw 'Archive selection changed existing file contents.' }
     [void][TodoPreview]::PostMessage($dialog, 0x111, [IntPtr]2, [IntPtr]::Zero)
     Await-Condition { ![TodoPreview]::IsWindow($dialog) } 'Options did not close.'
-    Write-Output "PASS: original native smoke flows. Starting filter form checks."
+    Write-Output "PASS: original native smoke flows and non-destructive archive selection without overwrite confirmation. Starting filter form checks."
     # Filter fields and suggestions operate on the actual native controls.
     [void][TodoPreview]::PostMessage($root, 0x111, [IntPtr]111, [IntPtr]::Zero)
     Await-Condition { [TodoPreview]::GetDlgItem([TodoPreview]::GetWindow($root, 6), 102) -ne [IntPtr]::Zero } 'Filter form did not appear.'

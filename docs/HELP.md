@@ -58,6 +58,8 @@ If another program changes the source file, a write is refused and editor text i
 Copy your draft if needed, reload with F5, reselect the task, then reapply your edit.
 Reload cancels the edit target so an old line number cannot overwrite a different task.
 Options can enable automatic refresh when the editor is empty.
+Windows Options archive selection only sets a destination; it leaves existing
+contents unchanged. Archiving appends completed tasks to that destination.
 Archive writes done.txt first. If removing tasks from todo.txt fails, duplicates can
 remain, but tasks are not lost. The error dialog explains partial archive failures.
 

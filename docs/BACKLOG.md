@@ -7,6 +7,11 @@ priority is the original application's appearance and behavior, with gaps
 tracked in [PARITY.md](PARITY.md). These are future ideas, not implemented
 features or authorization to start them automatically after parity.
 
+- [ ] **Ctrl+D for Copy Task to New Task.** Check for shortcut conflicts before
+  implementation. Make Ctrl+D the default shortcut displayed for this command,
+  while keeping Ctrl+Shift+C usable as an alias. Neither frontend currently
+  binds Ctrl+D; check again when implementing. Deferred; do not implement now.
+
 - [ ] **Command-line task operations.** Make the application usable without a
   GUI through simple commands to add, list, complete, and otherwise manage
   tasks. Reuse task semantics and file protections across CLI and desktop.

@@ -185,7 +185,9 @@ other editors or sync tools: there is still a small race between the comparison
 and replacement. Keep normal backups for sync workflows.
 
 Archiving appends completed tasks to the chosen archive, then removes them from
-the source. Automatically select archive path chooses `done.txt` beside the
+the source. Selecting an archive path in Windows Options only sets the destination;
+it does not overwrite or otherwise change that file. Existing archives receive
+appended tasks when archiving runs. Automatically select archive path chooses `done.txt` beside the
 todo file. Source and archive must be different files. The two-file operation
 is not atomic: if source removal fails after the archive write succeeds, the
 dialog explains that completed tasks remain in both files. Resolve those
