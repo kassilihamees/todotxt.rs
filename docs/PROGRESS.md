@@ -1,5 +1,28 @@
 # Progress
 
+## Mounted-drive loading fix (2026-10-09)
+
+- Reproduced error 1005 on the maintainer's mounted file without displaying its
+  contents or writing to it: direct Rust reading succeeds, while canonicalize
+  fails on the mount's final-path query.
+- Made canonicalization optional for document loading and archive destinations.
+  Use an absolute path when the filesystem cannot resolve the final path; keep
+  canonical/symlink resolution when supported. Actual read errors still fail.
+- Retained byte-based external-change checks and atomic saves. Windows self-archive
+  protection also recognizes case and extended-prefix variants when final-path
+  resolution is unavailable. Archive IO uses its resolved absolute destination.
+- Added four regressions for unsupported-volume loading, unchanged bytes/BOM/
+  newlines, successful local save and refused external changes, archive fallback,
+  missing files, and Windows self-archive across path representations.
+- The updated Document loader successfully opened the actual mounted source and
+  rechecked it as unchanged. Its path and task contents are not committed.
+- All 23 native/library regression tests, format check, strict Clippy, optimized
+  release build and native GUI smoke passed. The smoke script now recognizes a
+  running app owning Ctrl+Alt+M on both launches, dismissing only the expected
+  shortcut-conflict dialog. No deferred merging, conflict resolution or watcher
+  feature was implemented. The updated release is in `target/parity/release`
+  because the normal release executable is running and locked.
+
 ## Tray right-click and global shortcut verification (2026-10-09)
 
 - Verified the existing release's notification-area Exit menu against an isolated

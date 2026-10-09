@@ -86,6 +86,16 @@ function Await-Condition([scriptblock]$condition, [string]$message) {
         Start-Sleep -Milliseconds 50
     }
 }
+function Close-HotkeyConflictPopup([int]$processId) {
+    $popup = [TodoPreview]::FindPopup($processId)
+    if ((Control-Class $popup) -ne '#32770') { return $false }
+    $message = [Text.StringBuilder]::new(2000)
+    [void][TodoPreview]::GetWindowText([TodoPreview]::GetDlgItem($popup, 65535), $message, $message.Capacity)
+    if (!$message.ToString().Contains('Ctrl+Alt+M')) { throw 'Unexpected error dialog in the isolated smoke application.' }
+    [void][TodoPreview]::PostMessage($popup, 0x10, [IntPtr]::Zero, [IntPtr]::Zero)
+    Await-Condition { ![TodoPreview]::IsWindow($popup) } 'Hotkey conflict error did not close.'
+    return $true
+}
 function Total-RowHeight([IntPtr]$list) {
     $count = [TodoPreview]::SendMessage($list, 0x18B, [IntPtr]::Zero, [IntPtr]::Zero).ToInt32()
     $height = 0
@@ -201,9 +211,7 @@ try {
     } 'Native preferences did not persist.'
     Start-Sleep -Milliseconds 250
     # The running original may own Ctrl+Alt+M; this must surface an error without disabling the tray.
-    $popup = [TodoPreview]::FindPopup($process.Id)
-    $hotkeyAvailable = (Control-Class $popup) -ne '#32770'
-    if ((Control-Class $popup) -eq '#32770') { [void][TodoPreview]::PostMessage($popup, 0x10, [IntPtr]::Zero, [IntPtr]::Zero); Await-Condition { ![TodoPreview]::IsWindow($popup) } 'Hotkey conflict error did not close.' }
+    $hotkeyAvailable = !(Close-HotkeyConflictPopup $process.Id)
     [void][TodoPreview]::SendMessage($root, 0x112, [IntPtr]0xF020, [IntPtr]::Zero)
     Await-Condition { [TodoPreview]::IsIconic($root) -and ![TodoPreview]::IsWindowVisible($root) } 'Tray minimization did not hide the taskbar window.'
     [void][TodoPreview]::PostMessage($root, 0x8002, [IntPtr]1, [IntPtr]0x203)
@@ -248,6 +256,8 @@ try {
     Await-Condition { $root = [TodoPreview]::FindRoot($process.Id); $root -ne [IntPtr]::Zero } 'Tray Exit test window did not appear.'
     $root = [TodoPreview]::FindRoot($process.Id)
     [void][TodoPreview]::ShowWindow($root, 5)
+    Start-Sleep -Milliseconds 250
+    [void](Close-HotkeyConflictPopup $process.Id)
     # Right-click must offer a real Exit entry even while the owner is hidden.
     [void][TodoPreview]::SendMessage($root, 0x112, [IntPtr]0xF020, [IntPtr]::Zero)
     Await-Condition { ![TodoPreview]::IsWindowVisible($root) } 'Window did not hide before the tray menu check.'

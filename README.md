@@ -248,6 +248,14 @@ locale; Linux retains deterministic lowercase ordering.
 Some malformed-text parsing quirks are not
 intentionally reproduced.
 
+Mounted drives (including rclone/WinFsp) can provide readable files while rejecting
+Windows final-path queries. Opening a document now keeps an absolute path when
+canonicalization is unavailable; ordinary reads still report genuine IO errors.
+The fix was verified read-only against an rclone-mounted source. External-change
+checks and atomic replacement remain in place; writes still require the mount
+backend to support the save operations. See the [corresponding Windows mount
+compatibility report](https://github.com/microsoft/edit/issues/947).
+
 ## Verification and project layout
 
 ```sh
