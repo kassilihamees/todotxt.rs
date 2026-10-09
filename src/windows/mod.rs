@@ -1116,7 +1116,10 @@ impl Native {
                     self.fonts[0],
                     self.dpi,
                     "About / Help — todotxt.rs",
-                    "Rust port of todotxt.net by Ben Hughes. BSD licensed.",
+                    &format!(
+                        "todotxt.rs {} — Rust port of todotxt.net by Ben Hughes. BSD licensed.",
+                        env!("CARGO_PKG_VERSION")
+                    ),
                     include_str!("../../docs/HELP.md"),
                     true,
                 )?;

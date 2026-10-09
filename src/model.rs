@@ -67,6 +67,11 @@ impl Model {
             date: Local::now().date_naive(),
             startup_error: error,
         };
+        model.debug_event(concat!(
+            "startup version ",
+            env!("CARGO_PKG_VERSION"),
+            " frontend native"
+        ));
         if let Some(path) = chosen
             && let Err(e) = model.load(&path)
         {
@@ -152,6 +157,10 @@ impl Model {
             .collect();
         if let Some(doc) = &mut self.document {
             doc.replace(&changes)?;
+            self.settings.debug_event(
+                &self.config_dir,
+                &format!("save verified bytes={}", doc.byte_len()),
+            );
         }
         self.refresh();
         Ok(())
@@ -188,8 +197,18 @@ impl Model {
         Ok(Some(id))
     }
     pub fn reload(&mut self) -> io::Result<()> {
-        if let Some(doc) = &self.document {
-            self.document = Some(Document::open(&doc.path)?);
+        if let Some(doc) = &mut self.document {
+            let before = doc.byte_len();
+            let result = doc.reload();
+            self.settings.debug_event(
+                &self.config_dir,
+                &format!(
+                    "reload loaded_bytes_before={before} accepted={} loaded_bytes_after={}",
+                    result.is_ok(),
+                    doc.byte_len()
+                ),
+            );
+            result?;
         }
         self.editing = None;
         self.refresh();

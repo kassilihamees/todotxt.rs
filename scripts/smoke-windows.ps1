@@ -280,6 +280,44 @@ try {
     if ($process.HasExited) { throw 'Application exited unexpectedly.' }
     $log = [IO.File]::ReadAllText((Join-Path $previewProfileDirectory 'error.log'))
     if (!$log.Contains('DEBUG command 134') -or $log.Contains('Retained native draft')) { throw 'Debug events are missing or include draft text.' }
+    # Reproduce a delayed empty read after a previously successful save.
+    [void][TodoPreview]::SendMessage($editor, 0xC, [IntPtr]::Zero, '')
+    [void][TodoPreview]::PostMessage($root, 0x111, [IntPtr]109, [IntPtr]::Zero)
+    Start-Sleep -Milliseconds 200
+    [void][TodoPreview]::PostMessage($root, 0x111, [IntPtr]110, [IntPtr]::Zero)
+    Await-Condition { [TodoPreview]::GetDlgItem([TodoPreview]::GetWindow($root, 6), 204) -ne [IntPtr]::Zero } 'Auto-refresh Options did not appear.'
+    $dialog = [TodoPreview]::GetWindow($root, 6)
+    [void][TodoPreview]::SendMessage([TodoPreview]::GetDlgItem($dialog, 204), 0xF1, [IntPtr]1, [IntPtr]::Zero)
+    [void][TodoPreview]::PostMessage($dialog, 0x111, [IntPtr]1, [IntPtr]::Zero)
+    Await-Condition { ![TodoPreview]::IsWindow($dialog) } 'Auto-refresh Options did not close.'
+    $retainedRows = [TodoPreview]::SendMessage($list, 0x18B, [IntPtr]::Zero, [IntPtr]::Zero).ToInt32()
+    [IO.File]::WriteAllText($todo, '')
+    Await-Condition { (Control-Class ([TodoPreview]::GetWindow($root, 6))) -eq '#32770' } 'Empty-read guard did not show an error.'
+    $errorDialog = [TodoPreview]::GetWindow($root, 6)
+    $message = [Text.StringBuilder]::new(3000)
+    [void][TodoPreview]::SendMessage([TodoPreview]::GetDlgItem($errorDialog, 65535), 0xD, [IntPtr]$message.Capacity, $message)
+    if (!$message.ToString().Contains('Reload refused')) { throw 'Expected the delayed empty-read protection error.' }
+    [void][TodoPreview]::PostMessage($errorDialog, 0x10, [IntPtr]::Zero, [IntPtr]::Zero)
+    Await-Condition { ![TodoPreview]::IsWindow($errorDialog) } 'Empty-read error did not close.'
+    Start-Sleep -Milliseconds 1200
+    if ([TodoPreview]::SendMessage($list, 0x18B, [IntPtr]::Zero, [IntPtr]::Zero).ToInt32() -ne $retainedRows) { throw 'Delayed empty read erased the task list.' }
+    if ([IO.File]::ReadAllText($todo) -ne '') { throw 'Empty-read guard automatically overwrote the uncertain file.' }
+    $log = [IO.File]::ReadAllText((Join-Path $previewProfileDirectory 'error.log'))
+    if (!$log.Contains('accepted=false')) { throw 'Reload diagnostics did not record the refusal.' }
+    [IO.File]::WriteAllText($todo, $externalBytes)
+    [void][TodoPreview]::PostMessage($root, 0x111, [IntPtr]109, [IntPtr]::Zero)
+    Start-Sleep -Milliseconds 200
+    # About exposes the actual running version instead of relying on filenames.
+    [void][TodoPreview]::PostMessage($root, 0x111, [IntPtr]112, [IntPtr]::Zero)
+    Await-Condition { [TodoPreview]::GetDlgItem([TodoPreview]::GetWindow($root, 6), 101) -ne [IntPtr]::Zero } 'About did not appear.'
+    $dialog = [TodoPreview]::GetWindow($root, 6)
+    $about = [Text.StringBuilder]::new(500)
+    [void][TodoPreview]::SendMessage([TodoPreview]::GetDlgItem($dialog, 100), 0xD, [IntPtr]$about.Capacity, $about)
+    $version = [regex]::Match([IO.File]::ReadAllText((Join-Path $PWD 'Cargo.toml')), '(?m)^version = "([^"]+)"').Groups[1].Value
+    if (!$about.ToString().Contains($version)) { throw 'About does not identify the running build version.' }
+    [void][TodoPreview]::PostMessage($dialog, 0x111, [IntPtr]2, [IntPtr]::Zero)
+    Await-Condition { ![TodoPreview]::IsWindow($dialog) } 'About did not close.'
+    Write-Output 'PASS: delayed empty-read guard retains task rows, pauses auto refresh, logs refusal, and identifies the running version.'
     [void][TodoPreview]::PostMessage($root, 0x111, [IntPtr]133, [IntPtr]::Zero)
     Await-Condition { $process.HasExited } 'File Exit did not quit with minimize-on-close enabled.'
     # Restart the isolated application to test tray Exit independently of File Exit.

@@ -2,6 +2,32 @@ use std::fs;
 use todotxt_rs::{model::Model, settings::Settings};
 
 #[test]
+fn delayed_empty_reload_preserves_completed_tasks_selection_and_draft() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("todo.txt");
+    fs::write(&path, "First fictional task\nSecond fictional task\n").unwrap();
+    let mut model = Model::new(Some(path.clone()), Some(dir.path().join("config")), false);
+    model.settings.auto_refresh = true;
+    let date = model.date;
+    model.modify(|task| Some(task.toggle(date))).unwrap();
+    let saved = fs::read(&path).unwrap();
+    let rows = model.rows.clone();
+    let selection = model.selected.clone();
+    model.draft = "Retained fictional draft".into();
+    fs::write(&path, []).unwrap();
+    assert!(model.reload().is_err());
+    assert_eq!(model.tasks.len(), 2);
+    assert!(model.tasks.iter().any(|(_, task)| task.completed));
+    assert_eq!(model.rows, rows);
+    assert_eq!(model.selected, selection);
+    assert_eq!(model.draft, "Retained fictional draft");
+    assert!(!model.document.as_ref().unwrap().can_auto_reload());
+    fs::write(&path, saved).unwrap();
+    model.reload().unwrap();
+    assert!(model.document.as_ref().unwrap().can_auto_reload());
+}
+
+#[test]
 fn conflicting_edit_retains_draft_and_reload_allows_explicit_retry() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("todo.txt");

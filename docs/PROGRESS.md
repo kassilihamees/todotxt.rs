@@ -1,5 +1,37 @@
 # Progress
 
+## Delayed empty reload and build identification (2026-10-09)
+
+- A further report showed completion followed by reload within a second and
+  an empty task list, plus a Windows executable-load error. Marked both public
+  milestones with unresolved mounted-file warnings. Do not claim the underlying
+  filesystem corruption has been fixed.
+- The app found running initially was the older default release build, not
+  either published ZIP. It later exited. The reported executable copy was
+  absent at inspection. Its proposed SSD location resolves through ordinary
+  NTFS junction/volume mounts; the task-file volume is FUSE-rclone. The two
+  errors cannot yet be attributed to one cause.
+- Reload now reads a candidate once and refuses unexpected empty/whitespace-only
+  content before replacing the loaded document, for both frontends and explicit
+  Reload. Keep tasks, selection and drafts; pause automatic refresh and preserve
+  last verified bytes in an independent local recovery snapshot. File > Open
+  remains available for intentionally empty files.
+- Development version is 0.1.2-dev. About and optional startup logging expose
+  the actual version; debug events record verified save sizes and reload outcomes
+  without task text or file paths.
+- Added delayed-empty document/controller regressions and a real native GUI
+  simulation of successful save followed by a later empty read. The GUI retains
+  task rows after the error is dismissed, pauses refresh, and logs refusal.
+- Formatting, 30 task/file tests, seven portable GUI tests, strict Clippy for
+  both frontends, optimized build and extended native smoke pass on Windows.
+  A new versioned copy in the requested SSD folder matched SHA-256 and launched
+  through Windows successfully using --help, without opening any task file.
+  The full native smoke also passed from that SSD executable copy. No per-file
+  v0.1.1 recovery copies were found for the supplied mounted task-file path;
+  this supports the older-build observation but does not establish the save cause.
+- This is a development build with a protective reload fix, not a third stable
+  release or proof of safe mounted saving. Live task files remain untouched.
+
 ## Mounted-save safety update (2026-10-09)
 
 - A real-file completion on a Windows rclone mount was reported to immediately

@@ -45,6 +45,10 @@ verifies saved bytes, and keeps local recovery copies. Ten isolated native
 mounted completion toggles passed with automatic refresh enabled; the original
 failure's precise cause remains unconfirmed. Remote upload durability is not
 proved by successful read-back from a mount. See `releases/v0.1.1.md`.
+After a further report, both public milestones carry mounted-file warnings.
+0.1.2-dev protects against a delayed empty reload and exposes its running
+version, but the underlying mounted-save failure remains unresolved. Use an
+ordinary local task file while investigating.
 
 | Area | Current status |
 | --- | --- |

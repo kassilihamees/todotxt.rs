@@ -65,6 +65,11 @@ task contents before replacement. On Windows these are under
 tasks, pauses automatic refresh, and reports the recovery folder. Check or
 restore the disk file before explicitly reloading. Cloud uploads can be delayed;
 verification of the mounted view does not verify eventual remote storage.
+If a later reload returns an empty file after tasks were loaded, reload is
+refused, tasks stay in memory, and automatic refresh pauses. The error gives
+the local last-verified.txt recovery location. Check or restore the file before
+reloading. Use File > Open to deliberately open an empty file. About identifies
+the running version; debug logging records startup version and reload outcomes.
 Windows Options archive selection only sets a destination; it leaves existing
 contents unchanged. Archiving appends completed tasks to that destination.
 Archive writes done.txt first. If removing tasks from todo.txt fails, duplicates can

@@ -153,6 +153,14 @@ impl Desktop {
             completion_index: 0,
             completion_dismissed: false,
         };
+        app.settings.debug_event(
+            &app.config_dir,
+            concat!(
+                "startup version ",
+                env!("CARGO_PKG_VERSION"),
+                " frontend portable"
+            ),
+        );
         if let Some(path) = chosen {
             app.load(path);
         }
@@ -398,10 +406,19 @@ impl Desktop {
             }
             Action::Archive => self.archive(),
             Action::Reload => {
-                if let Some(doc) = &self.document {
-                    match Document::open(doc.path.clone()) {
-                        Ok(doc) => {
-                            self.document = Some(doc);
+                if let Some(doc) = &mut self.document {
+                    let before = doc.byte_len();
+                    let result = doc.reload();
+                    self.settings.debug_event(
+                        &self.config_dir,
+                        &format!(
+                            "reload loaded_bytes_before={before} accepted={} loaded_bytes_after={}",
+                            result.is_ok(),
+                            doc.byte_len()
+                        ),
+                    );
+                    match result {
+                        Ok(()) => {
                             self.editing = None;
                             self.refresh();
                         }
@@ -1398,6 +1415,7 @@ impl Desktop {
                 }
                 Dialog::Help => {
                     ui.heading("todotxt.rs");
+                    ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
                     ui.label("A Rust port of todotxt.net by Ben Hughes. BSD licensed.");
                     egui::ScrollArea::vertical()
                         .max_height(410.0)

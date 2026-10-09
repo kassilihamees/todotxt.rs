@@ -5,10 +5,14 @@ targeting Windows and Linux. It follows the original's compact menu bar, one-lin
 editor, raw-text task list, keyboard navigation, grouping, and status counts.
 This is a working first port; the remaining differences are listed below.
 
-The current Windows release is [v0.1.1](https://github.com/kassilihamees/todotxt.rs/releases/tag/v0.1.1).
+The previous Windows milestone is [v0.1.1](https://github.com/kassilihamees/todotxt.rs/releases/tag/v0.1.1).
 Download its Windows x86-64 ZIP, extract it, and run `todotxt-rs.exe`.
 See the [release notes](docs/releases/v0.1.1.md) for validation and known gaps.
-v0.1.0 has a reported mounted-drive data-loss issue; use the newer release.
+Mounted-file saving remains under investigation after further data-loss reports.
+Both v0.1.0 and v0.1.1 now carry warnings and are marked as prereleases. Keep
+the executable and working task file on ordinary local storage until this is
+resolved. The current development build is 0.1.2-dev; it guards delayed empty
+reloads and identifies its version in About and optional startup debug events.
 Version numbers are independent of the reference todotxt.net 3.3.1.0.
 
 **Windows uses Win32 controls by default:** OS menus, a standard edit box with
@@ -199,6 +203,15 @@ pauses automatic refresh, and reports the recovery folder. Check the on-disk fil
 and restore the appropriate recovery copy before explicitly reloading. It does
 not automatically overwrite an uncertain destination again. These copies are
 basic recovery protection, not automatic conflict merging or version control.
+
+Reload also refuses an unexpectedly empty or whitespace-only file when the
+loaded document contains tasks, even if an earlier save passed verification.
+It retains the task list, pauses automatic refresh, and preserves the last
+verified bytes in a separate `empty-read-*` recovery folder as `last-verified.txt`.
+Explicit Reload is subject to the same protection. After checking/restoring the
+disk file, Reload can resume normal refresh. To intentionally open an empty file,
+use File > Open. This prevents loss of in-memory tasks; it does not prove that
+the filesystem preserved the on-disk or remote file.
 
 Mounted/cloud filesystem drivers can still violate replacement semantics or
 delay remote uploads. Read-back verification checks the mounted view, not the

@@ -190,6 +190,34 @@ impl Document {
         !self.failed_save
     }
 
+    pub fn byte_len(&self) -> usize {
+        self.original.len()
+    }
+
+    /// Never discard a nonempty document merely because a later filesystem
+    /// read returns empty. Explicit File > Open can open an intentionally empty file.
+    pub fn reload(&mut self) -> io::Result<()> {
+        let mut candidate = Self::open(&self.path)?;
+        candidate.recovery_root = self.recovery_root.clone();
+        if self.lines.iter().any(|line| !line.trim().is_empty())
+            && candidate.lines.iter().all(|line| line.trim().is_empty())
+        {
+            self.failed_save = true;
+            fs::create_dir_all(&self.recovery_root)?;
+            let recovery = tempfile::Builder::new()
+                .prefix("empty-read-")
+                .tempdir_in(&self.recovery_root)?;
+            atomic_write(&recovery.path().join("last-verified.txt"), &self.original)?;
+            let recovery = recovery.keep();
+            return Err(invalid(format!(
+                "Reload refused: the filesystem returned an empty task file after a nonempty file was loaded. Tasks remain in memory and automatic refresh is paused. The last verified contents are in {}. Check or restore the disk file before reloading. To deliberately open an empty file, use File > Open.",
+                recovery.join("last-verified.txt").display()
+            )));
+        }
+        *self = candidate;
+        Ok(())
+    }
+
     fn ensure_unchanged(&self) -> io::Result<()> {
         if self.changed()? {
             return Err(invalid(
@@ -373,6 +401,65 @@ mod mount_tests {
 
     fn unsupported_volume(_: &Path) -> io::Result<PathBuf> {
         Err(io::Error::from_raw_os_error(1005))
+    }
+
+    #[test]
+    fn delayed_empty_read_after_verified_completion_keeps_memory_and_recovery() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("todo.txt");
+        fs::write(&path, "First fictional task\r\nSecond fictional task\r\n").unwrap();
+        let mut doc = Document::open(&path).unwrap();
+        doc.recovery_root = dir.path().join("local-recovery");
+        doc.replace(&BTreeMap::from([(
+            0,
+            Some("x 2026-10-09 First fictional task".into()),
+        )]))
+        .unwrap();
+        let verified = fs::read(&path).unwrap();
+        // The save/read-back passed, then the filesystem exposed an empty file.
+        fs::write(&path, []).unwrap();
+        assert!(doc.changed().unwrap());
+        let error = doc.reload().unwrap_err();
+        assert!(error.to_string().contains("Reload refused"));
+        assert_eq!(doc.original, verified);
+        assert_eq!(
+            doc.lines,
+            ["x 2026-10-09 First fictional task", "Second fictional task"]
+        );
+        assert!(!doc.can_auto_reload());
+        assert!(fs::read(&path).unwrap().is_empty());
+        let snapshot = fs::read_dir(&doc.recovery_root)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| {
+                path.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with("empty-read-")
+            })
+            .unwrap();
+        assert_eq!(
+            fs::read(snapshot.join("last-verified.txt")).unwrap(),
+            verified
+        );
+        fs::write(&path, &verified).unwrap();
+        doc.reload().unwrap();
+        assert!(doc.can_auto_reload());
+    }
+
+    #[test]
+    fn reload_accepts_nonempty_changes_and_already_empty_documents() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("todo.txt");
+        fs::write(&path, "Original fictional task\n").unwrap();
+        let mut doc = Document::open(&path).unwrap();
+        fs::write(&path, "External fictional change\n").unwrap();
+        doc.reload().unwrap();
+        assert_eq!(doc.lines, ["External fictional change"]);
+        fs::write(&path, []).unwrap();
+        let mut explicitly_opened = Document::open(&path).unwrap();
+        explicitly_opened.reload().unwrap();
+        assert!(explicitly_opened.lines.is_empty());
     }
 
     #[test]
