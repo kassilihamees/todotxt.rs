@@ -5,6 +5,7 @@ use std::{
     fs,
     io::{self, Write},
     path::{Path, PathBuf},
+    time::SystemTime,
 };
 
 fn invalid(message: impl Into<String>) -> io::Error {
@@ -127,11 +128,28 @@ fn atomic_write_checked(
     Ok(())
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FileStamp {
+    length: u64,
+    modified: SystemTime,
+}
+
+impl FileStamp {
+    fn read(path: &Path) -> io::Result<Self> {
+        let metadata = fs::metadata(path)?;
+        Ok(Self {
+            length: metadata.len(),
+            modified: metadata.modified()?,
+        })
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Document {
     pub path: PathBuf,
     pub lines: Vec<String>,
     original: Vec<u8>,
+    stamp: Option<FileStamp>,
     newline: String,
     final_newline: bool,
     bom: bool,
@@ -149,6 +167,8 @@ impl Document {
         canonicalize: impl FnOnce(&Path) -> io::Result<PathBuf>,
     ) -> io::Result<Self> {
         let path = resolved_path(path, canonicalize)?;
+        // Capture before reading so a concurrent change remains visible to polling.
+        let stamp = FileStamp::read(&path).ok();
         let original = fs::read(&path)?;
         let bom = original.starts_with(&[0xef, 0xbb, 0xbf]);
         let text = std::str::from_utf8(if bom { &original[3..] } else { &original })
@@ -169,6 +189,7 @@ impl Document {
             path,
             lines,
             original,
+            stamp,
             newline,
             final_newline,
             bom,
@@ -192,8 +213,15 @@ impl Document {
         Ok(fs::read(&self.path)? != self.original)
     }
 
+    /// Idle polling must not open the file: rclone reads can defer dirty-cache uploads.
+    /// Exact content comparisons are still mandatory before every write.
+    pub fn poll_changed(&self) -> io::Result<bool> {
+        let current = FileStamp::read(&self.path)?;
+        Ok(self.stamp.as_ref().is_some_and(|stamp| *stamp != current))
+    }
+
     pub fn can_auto_reload(&self) -> bool {
-        !self.failed_save
+        !self.failed_save && self.stamp.is_some()
     }
 
     pub fn byte_len(&self) -> usize {
@@ -273,6 +301,7 @@ impl Document {
         }
         self.lines = lines;
         self.original = bytes;
+        self.stamp = FileStamp::read(&self.path).ok();
         self.failed_save = false;
         Ok(())
     }
@@ -407,6 +436,52 @@ mod mount_tests {
 
     fn unsupported_volume(_: &Path) -> io::Result<PathBuf> {
         Err(io::Error::from_raw_os_error(1005))
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn idle_poll_works_when_content_reads_are_denied() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("todo.txt");
+        fs::write(&path, b"Fictional task\n").unwrap();
+        let doc = Document::open(&path).unwrap();
+        let _exclusive = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&path)
+            .unwrap();
+        assert!(!doc.poll_changed().unwrap());
+        assert!(doc.changed().is_err());
+    }
+
+    #[test]
+    fn idle_metadata_poll_detects_changes_without_weakening_save_checks() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("todo.txt");
+        fs::write(&path, b"Fictional task one\n").unwrap();
+        let mut doc = Document::open(&path).unwrap();
+        doc.recovery_root = directory.path().join("recovery");
+        assert!(!doc.poll_changed().unwrap());
+        doc.add("Another fictional task").unwrap();
+        assert!(!doc.poll_changed().unwrap());
+        fs::write(&path, b"External task\n").unwrap();
+        assert!(doc.poll_changed().unwrap());
+        doc.reload().unwrap();
+        assert!(!doc.poll_changed().unwrap());
+        let modified = fs::metadata(&path).unwrap().modified().unwrap();
+        // A same-size edit preserving mtime cannot be found by idle metadata checks.
+        fs::write(&path, b"Replaced task\n").unwrap();
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_times(fs::FileTimes::new().set_modified(modified))
+            .unwrap();
+        assert!(!doc.poll_changed().unwrap());
+        assert!(doc.changed().unwrap());
+        assert!(doc.add("Must not overwrite").is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"Replaced task\n");
     }
 
     #[test]

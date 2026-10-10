@@ -211,7 +211,7 @@ pub fn run(path: Option<PathBuf>, config: Option<PathBuf>, demo: bool) -> io::Re
             } else {
                 msg.wParam as u16
             };
-            let handled = if msg.message == WM_KEYDOWN {
+            let handled = if matches!(msg.message, WM_KEYDOWN | WM_SYSKEYDOWN) {
                 data.app.borrow_mut().key(msg.hwnd, key, &data)
             } else {
                 false
@@ -510,7 +510,12 @@ unsafe extern "system" fn window_proc(
                     .as_ref()
                     .is_some_and(|doc| doc.can_auto_reload())
             {
-                let changed = app.model.document.as_ref().map(|d| d.changed()).transpose();
+                let changed = app
+                    .model
+                    .document
+                    .as_ref()
+                    .map(|d| d.poll_changed())
+                    .transpose();
                 match changed {
                     Ok(Some(true)) => app.execute(RELOAD, data),
                     Err(e) => app.report(e),
@@ -1283,7 +1288,9 @@ impl Native {
         // Route queued keys by their destination, even if focus changed before dispatch.
         let editor = source == self.editor;
         let command;
-        if key == VK_F5 {
+        if alt && !ctrl && key == VK_F4 {
+            command = EXIT;
+        } else if key == VK_F5 {
             command = RELOAD;
         } else if key == VK_F10 {
             command = OPTIONS;
@@ -1380,6 +1387,7 @@ impl Native {
                 n if n == b'V' as u16 => PASTE,
                 n if n == b'X' as u16 => CUT,
                 n if (b'0' as u16..=b'7' as u16).contains(&n) => SORT_BASE + n - b'0' as u16,
+                n if (VK_NUMPAD0..=VK_NUMPAD7).contains(&n) => SORT_BASE + n - VK_NUMPAD0,
                 _ => 0,
             };
             if key == b'A' as u16 {
@@ -1412,6 +1420,7 @@ impl Native {
                 VK_OEM_PERIOD => RELOAD,
                 VK_OEM_2 if shift => HELP,
                 n if (b'0' as u16..=b'9' as u16).contains(&n) => PRESET_BASE + n - b'0' as u16,
+                n if (VK_NUMPAD0..=VK_NUMPAD9).contains(&n) => PRESET_BASE + n - VK_NUMPAD0,
                 _ => 0,
             };
             if key == b'J' as u16 || key == b'K' as u16 || key == VK_UP || key == VK_DOWN {

@@ -57,7 +57,11 @@ untouched whitespace, and physical task order are preserved.
 If another program changes the source file, a write is refused and editor text is kept.
 Copy your draft if needed, reload with F5, reselect the task, then reapply your edit.
 Reload cancels the edit target so an old line number cannot overwrite a different task.
-Options can enable automatic refresh when the editor is empty.
+Options can enable automatic refresh when the editor is empty. Idle refresh
+checks size and modification time without reopening unchanged file contents,
+so it does not continually defer rclone uploads. Same-size changes preserving
+mtime, or metadata hidden by mount caching, may need manual Reload. Save-time
+checks still compare the actual file contents before replacing anything.
 Saving closes and verifies the staged file, rechecks the source, and verifies
 the resulting destination. Local recovery copies retain previous and intended
 task contents before replacement. On Windows these are under

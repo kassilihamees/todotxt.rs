@@ -52,7 +52,8 @@ ordinary local task file while investigating.
 The affected computer has since confirmed a native 0.1.2-dev save-verification
 failure. Development-machine process/volume observations do not diagnose that
 computer. A diagnostic-only probe is described in `STORAGE-DIAGNOSTICS.md`;
-its affected-machine results are pending.
+its affected-machine fictional-fixture checks passed without reproducing the
+failure. The maintainer paused this investigation and removed the probe release.
 
 | Area | Current status |
 | --- | --- |
@@ -116,3 +117,24 @@ the advertised version and exposes a website link when it differs from the
 running version (the upstream check does not compare version ordering).
 It does not download or install an update. The Rust port currently performs no
 application-version checks; this is separate from refreshing changed task files.
+
+## Shortcut and mounted-refresh fixes (2026-10-10)
+
+Windows now routes WM_SYSKEYDOWN as well as WM_KEYDOWN: Alt priority shortcuts
+and Ctrl+Alt due/defer shortcuts can reach the application instead of being
+skipped as system keys. Unhandled system keys still reach Windows menus.
+Numeric-keypad filter presets and sorts are recognized. Alt+F4 invokes Exit
+even when minimize-on-close is enabled. Portable Alt+Left/Right now remove
+priority as documented. Right Shift retains its existing scan-code handling.
+Ctrl+D remains a deferred request; Ctrl+Shift+C remains duplication.
+
+Both frontends poll size/mtime instead of reading unchanged contents each second.
+Manual reload and full byte comparisons before saving remain intact. Metadata
+caching and edits preserving size/mtime can delay idle detection; these checks
+are not a remote upload guarantee. The mounted-save corruption report remains
+unresolved, independent of the idle polling change.
+
+The shortcut source audit also found an existing gap: upstream Shift+9 begins a
+new task with a priority prefix and suggestions. That shortcut is not yet
+implemented in either frontend. Editor-focused list shortcuts intentionally
+remain native text editing, as documented in Help.

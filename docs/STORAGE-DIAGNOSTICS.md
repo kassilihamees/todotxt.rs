@@ -10,11 +10,19 @@ Do not test by repeatedly editing a real task file. Keep the original backup
 and recovery copies. `previous.txt` contains the file before the failed save;
 `intended.txt` contains the requested completion/edit. Check these privately.
 
+## Current status (2026-10-10)
+
+The supplied affected-computer report passed both rounds of all four methods,
+including the current app save, at immediate, one-second, and four-second
+read-back. It did not reproduce the failure or prove remote upload durability.
+The maintainer has paused the file-specific corruption investigation. The
+GitHub diagnostic release and its diagnostic tag have been removed; the probe
+source remains available for future investigation.
+
 ## Run on the affected computer
 
-Download/extract the diagnostic ZIP onto ordinary local storage (for example,
-Downloads on C:), open PowerShell in its directory on the affected computer,
-and run:
+Build the example using the commands below, copy the executable onto ordinary
+local storage on the affected computer, and run:
 
 ```powershell
 .\storage_probe.exe 'H:\todo'

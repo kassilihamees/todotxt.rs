@@ -11,7 +11,7 @@ See the [release notes](docs/releases/v0.1.1.md) for validation and known gaps.
 Mounted-file saving remains under investigation after further data-loss reports.
 Both v0.1.0 and v0.1.1 now carry warnings and are marked as prereleases. Keep
 the executable and working task file on ordinary local storage until this is
-resolved. The current development build is 0.1.2-dev; it guards delayed empty
+resolved. The current development build is 0.1.3-dev; it guards delayed empty
 reloads and identifies its version in About and optional startup debug events.
 Version numbers are independent of the reference todotxt.net 3.3.1.0.
 
@@ -184,8 +184,16 @@ To recover:
    retained editor text will create a new task rather than overwrite a new line.
 
 Automatic refresh is optional and initially disabled. When enabled, it reloads
-external changes about once a second while the editor is empty and no dialog
-is open. It pauses while a draft is being entered and after a failed document save.
+external changes while the editor is empty and no dialog is open. Idle checks
+query only file size and modification time about once a second; they do not
+reopen/read unchanged task contents. This avoids repeatedly postponing rclone's
+cached-file uploads ([rclone write-back documentation](https://rclone.org/commands/rclone_mount/#vfs-file-caching)).
+It pauses while a draft is being entered and after a failed document save.
+Same-size edits preserving the modification timestamp require manual Reload;
+mounts can also cache metadata and delay detection. If metadata cannot be read
+when opening the file, automatic refresh stays unavailable until a successful
+reload/save obtains it. Every save still compares the full original bytes and
+refuses external changes, regardless of timestamps.
 
 Writes sync and close a temporary file in the same directory, read its bytes
 back, recheck the source, replace the destination, and read the destination back.

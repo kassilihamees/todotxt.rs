@@ -319,3 +319,27 @@ The first working port is ready for manual Windows/Linux use. Remaining parity
 work is tracked in `PARITY.md` and the root README, particularly tray/global
 hotkey behavior and exact widget/wrapping metrics. No full-parity or Linux-runtime
 claim is made.
+
+## 2026-10-10: shortcut delivery and rclone idle refresh
+
+Removed the diagnostic-only v0.1.2-dev GitHub release and tag at the maintainer's
+request. The supplied probe report passed all four save methods in both rounds
+at all three read-back delays. This did not reproduce corruption; that
+file-specific investigation is paused.
+
+0.1.3-dev handles Windows system-key messages for Alt shortcuts, recognizes
+numeric-keypad presets/sorts and forced Alt+F4 Exit, and fixes portable Alt+Left/Right priority removal.
+Automatic refresh in both frontends checks metadata instead of repeatedly
+opening/reading the task file. Rclone documents a write-back delay after last
+use; its File.Size/ModTime cache queries do not open the cached item, unlike
+content reads. Full byte checks before writes and recovery safeguards remain.
+Tests cover metadata-only polling with content reads denied on Windows,
+size/mtime change detection, baseline refresh after save/reload, and refusing
+same-size/timestamp external content changes at save time. Windows smoke tests
+include physical modifier chords through SendInput; Linux runtime is untested.
+
+Validation: 32 task/file tests, eight portable GUI tests, formatting and strict
+Clippy with default/portable features pass. Native release smoke checks pass
+with Windows SendInput for modifier arrows, duplicate, sort keys, calendar,
+reload, Options, tray hotkey and Alt+F4 with minimize-on-close enabled. The
+original upstream Shift+9 priority-prefill shortcut remains an audited gap.

@@ -47,6 +47,7 @@ enum Action {
     Cut,
     Priority,
     ShiftPriority(i8),
+    RemovePriority,
     Date(&'static str),
     ShiftDate(&'static str, i64),
     RemoveDate(&'static str),
@@ -429,6 +430,7 @@ impl Desktop {
             Action::Priority if !self.selection.is_empty() => {
                 self.dialog = Some(Dialog::Priority(String::new()))
             }
+            Action::RemovePriority => self.apply(|t| Some(t.with_priority(None))),
             Action::ShiftPriority(delta) => self.apply(|t| Some(t.shifted_priority(delta))),
             Action::Date(key) if !self.selection.is_empty() => {
                 let task = self.selected().first().map(|(_, t)| t.clone()).unwrap();
@@ -673,6 +675,7 @@ impl Desktop {
                     match key {
                         Key::ArrowUp => Some(Action::ShiftPriority(-1)),
                         Key::ArrowDown => Some(Action::ShiftPriority(1)),
+                        Key::ArrowLeft | Key::ArrowRight => Some(Action::RemovePriority),
                         _ => None,
                     }
                 } else {
@@ -1531,7 +1534,7 @@ impl Desktop {
                 && let Some(doc) = &self.document
                 && doc.can_auto_reload()
             {
-                match doc.changed() {
+                match doc.poll_changed() {
                     Ok(true) => self.action(Action::Reload, ctx),
                     Ok(false) => {}
                     Err(e) => self.fail(e),
@@ -1841,6 +1844,28 @@ mod gui_tests {
         fn file(&self) -> String {
             fs::read_to_string(&self.app.document.as_ref().unwrap().path).unwrap()
         }
+    }
+
+    #[test]
+    fn alt_arrows_change_and_remove_priority_without_editing_text() {
+        let mut h = Harness::new();
+        h.app.selection.insert(0);
+        let modifiers = egui::Modifiers {
+            alt: true,
+            ..egui::Modifiers::NONE
+        };
+        for key in [Key::ArrowDown, Key::ArrowUp, Key::ArrowLeft] {
+            h.frame(vec![egui::Event::Key {
+                key,
+                physical_key: Some(key),
+                pressed: true,
+                repeat: false,
+                modifiers,
+            }]);
+        }
+        assert_eq!(h.file(), "first +test\nsecond @home\n");
+        assert!(h.app.editor.is_empty());
+        assert!(h.app.error.is_none());
     }
 
     #[test]

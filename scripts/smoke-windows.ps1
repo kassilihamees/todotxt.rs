@@ -1,4 +1,4 @@
-param([string]$Binary = 'target/debug/todotxt-rs.exe', [switch]$PhysicalHotkey)
+param([string]$Binary = 'target/debug/todotxt-rs.exe', [switch]$PhysicalHotkey, [switch]$PhysicalShortcuts)
 $ErrorActionPreference = 'Stop'
 # Exercise real Win32 controls against an isolated copy of the sample.
 Add-Type @'
@@ -46,6 +46,34 @@ public class TodoPreview {
     [StructLayout(LayoutKind.Sequential)] public struct MouseInput { public int X, Y; public uint Data, Flags, Time; public UIntPtr Extra; }
     [StructLayout(LayoutKind.Explicit)] public struct InputData { [FieldOffset(0)] public KeyboardInput Keyboard; [FieldOffset(0)] public MouseInput Mouse; }
     [StructLayout(LayoutKind.Sequential)] public struct Input { public uint Type; public InputData Data; }
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint from, uint to, bool attach);
+    public static void Foreground(IntPtr h) {
+        uint ignored;
+        uint current = GetCurrentThreadId();
+        uint foreground = GetWindowThreadProcessId(GetForegroundWindow(), out ignored);
+        bool attached = foreground != current && AttachThreadInput(current, foreground, true);
+        try { SetForegroundWindow(h); } finally { if (attached) AttachThreadInput(current, foreground, false); }
+    }
+    public static bool Chord(ushort key, bool ctrl, bool alt, bool shift) {
+        var keys = new System.Collections.Generic.List<ushort>();
+        if (ctrl) keys.Add(0x11); if (alt) keys.Add(0x12); if (shift) keys.Add(0x10);
+        keys.Add(key);
+        var inputs = new Input[keys.Count * 2];
+        for (int n = 0; n < keys.Count; n++) {
+            inputs[n].Type = 1; inputs[n].Data.Keyboard.Key = keys[n];
+            int release = inputs.Length - n - 1;
+            inputs[release].Type = 1; inputs[release].Data.Keyboard.Key = keys[n]; inputs[release].Data.Keyboard.Flags = 2;
+            if (keys[n] == 0xA1) {
+                inputs[n].Data.Keyboard.Key = inputs[release].Data.Keyboard.Key = 0;
+                inputs[n].Data.Keyboard.Scan = inputs[release].Data.Keyboard.Scan = 0x36;
+                inputs[n].Data.Keyboard.Flags = 8; inputs[release].Data.Keyboard.Flags = 10;
+            }
+        }
+        return SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(Input))) == inputs.Length;
+    }
     public static bool CtrlAltM() {
         var inputs = new Input[6];
         ushort[] keys = { 0x11, 0x12, 0x4d, 0x4d, 0x12, 0x11 };
@@ -157,6 +185,77 @@ try {
     Await-Condition { [IO.File]::ReadAllText($todo).Contains('Native smoke task +smoke') } 'Native editor Enter did not save.'
     [void][TodoPreview]::PostMessage($root, 0x111, [IntPtr]107, [IntPtr]::Zero)
     Await-Condition { [IO.File]::ReadAllLines($todo) | Where-Object { $_ -match '^x \d{4}-\d{2}-\d{2} .*Native smoke task' } } 'Native completion did not save.'
+    if ($PhysicalShortcuts) {
+        [TodoPreview]::Foreground($root)
+        Await-Condition { [TodoPreview]::Foreground($root); [TodoPreview]::GetForegroundWindow() -eq $root } ('Cannot foreground the isolated shortcut test window. Root=' + $root + ' foreground=' + [TodoPreview]::GetForegroundWindow())
+        # Escape leaves the list focused; X uncompletes the selected fictional task.
+        [void][TodoPreview]::PostMessage($editor, 0x100, [IntPtr]27, [IntPtr]::Zero)
+        Start-Sleep -Milliseconds 100
+        function Stroke([uint16]$key, [bool]$ctrl = $false, [bool]$alt = $false, [bool]$shift = $false) {
+            Await-Condition { [TodoPreview]::Foreground($root); [TodoPreview]::GetForegroundWindow() -eq $root } 'Shortcut target lost foreground focus.'
+            if (![TodoPreview]::Chord($key, $ctrl, $alt, $shift)) { throw 'SendInput rejected shortcut input.' }
+            Start-Sleep -Milliseconds 180
+        }
+        function Smoke-Line { ([IO.File]::ReadAllLines($todo) | Where-Object { $_.Contains('Native smoke task +smoke') }) }
+        Stroke 0x58
+        Await-Condition { (Smoke-Line) -notmatch '^x ' } 'Physical X did not uncomplete the selected task.'
+        # Keep threshold-future rows visible throughout date shortcut testing.
+        Stroke 0x54 $true
+        foreach ($clear in @(0x25, 0x27)) {
+            Stroke 0x26 $false $true
+            Await-Condition { (Smoke-Line) -match '^\(A\) ' } 'Alt+Up did not increase priority.'
+            Stroke 0x28 $false $true
+            Await-Condition { (Smoke-Line) -match '^\(B\) ' } 'Alt+Down did not decrease priority.'
+            Stroke $clear $false $true
+            Await-Condition { (Smoke-Line) -notmatch '^\([A-Z]\)' } 'Alt+Left/Right did not remove priority.'
+        }
+        foreach ($due in @($false, $true)) {
+            $tag = if ($due) { 'due' } else { 't' }
+            foreach ($clear in @(0x25, 0x27)) {
+                Stroke 0x26 $true $due
+                $tomorrow = [DateTime]::Today.AddDays(1).ToString('yyyy-MM-dd')
+                Await-Condition { (Smoke-Line).Contains("${tag}:$tomorrow") } "Date Up failed for $tag."
+                Stroke 0x28 $true $due
+                $today = [DateTime]::Today.ToString('yyyy-MM-dd')
+                Await-Condition { (Smoke-Line).Contains("${tag}:$today") } "Date Down failed for $tag."
+                Stroke $clear $true $due
+                Await-Condition { !(Smoke-Line).Contains("${tag}:") } "Date Left/Right failed for $tag."
+            }
+        }
+        Stroke 0x43 $true $false $true
+        $copiedDraft = [Text.StringBuilder]::new(1000)
+        [void][TodoPreview]::SendMessage($editor, 0xD, [IntPtr]$copiedDraft.Capacity, $copiedDraft)
+        if (!$copiedDraft.ToString().Contains('Native smoke task')) { throw 'Ctrl+Shift+C did not duplicate into the editor.' }
+        Stroke 0x1B
+        $sorts = @('File', 'Alphabetical', 'Completed', 'Context', 'Due', 'Created', 'Priority', 'Project')
+        foreach ($base in @(0x30, 0x60)) {
+            foreach ($digit in 0..7) {
+                Stroke ([uint16]($base + $digit)) $true
+                Await-Condition { (Get-Content (Join-Path $previewProfileDirectory 'settings.json') -Raw | ConvertFrom-Json).sort -eq $sorts[$digit] } 'Sort shortcut did not change the actual sort preference.'
+            }
+        }
+        Stroke 0x50 $true $true
+        Await-Condition { [TodoPreview]::GetDlgItem([TodoPreview]::GetWindow($root, 6), 101) -ne [IntPtr]::Zero } 'Ctrl+Alt+P did not open threshold postponement.'
+        $deferDialog = [TodoPreview]::GetWindow($root, 6)
+        [void][TodoPreview]::PostMessage($deferDialog, 0x111, [IntPtr]2, [IntPtr]::Zero)
+        Await-Condition { ![TodoPreview]::IsWindow($deferDialog) } 'Threshold postponement did not cancel.'
+
+        Stroke 0xA1
+        $calendarTitle = [Text.StringBuilder]::new(300)
+        Await-Condition { [void][TodoPreview]::GetWindowText($root, $calendarTitle, $calendarTitle.Capacity); $calendarTitle.ToString().Contains('Calendar:') } 'Physical Right Shift did not toggle calendar.'
+        Stroke 0xA1
+        Stroke 0x74
+        Stroke 0x79
+        Await-Condition { [TodoPreview]::GetDlgItem([TodoPreview]::GetWindow($root, 6), 200) -ne [IntPtr]::Zero } 'Physical F10 did not open Options.'
+        $shortcutOptions = [TodoPreview]::GetWindow($root, 6)
+        [void][TodoPreview]::PostMessage($shortcutOptions, 0x111, [IntPtr]2, [IntPtr]::Zero)
+        Await-Condition { ![TodoPreview]::IsWindow($shortcutOptions) } 'Shortcut Options did not close.'
+        [TodoPreview]::Foreground($root)
+        Stroke 0x58
+        Await-Condition { (Smoke-Line) -match '^x ' } 'Physical X did not complete after sorting.'
+        Stroke 0x54 $true
+        Write-Output 'PASS: OS keyboard delivery for X, Alt priority arrows, Ctrl threshold arrows, Ctrl+Alt due arrows, Ctrl+Shift+C, Ctrl+0..7/keypad sorts, Ctrl+T, Right Shift calendar, F5, F10, and editor Escape.'
+    }
     [void][TodoPreview]::PostMessage($root, 0x111, [IntPtr]105, [IntPtr]::Zero)
     Await-Condition { [TodoPreview]::GetDlgItem([TodoPreview]::GetWindow($root, 6), 101) -ne [IntPtr]::Zero } 'Append dialog did not appear.'
     $input = [TodoPreview]::GetDlgItem([TodoPreview]::GetWindow($root, 6), 101)
@@ -215,6 +314,12 @@ try {
     Await-Condition { ![TodoPreview]::IsWindow($dialog) } 'Filter OK did not close.'
     Await-Condition { $filters = Get-Content (Join-Path $previewProfileDirectory 'settings.json') -Raw | ConvertFrom-Json; $filters.filter -eq '+demo' -and $filters.presets[8] -eq '-DONE' } 'Active filter and preset 9 did not save.'
     [void][TodoPreview]::SendMessage($root, 0x111, [IntPtr]400, [IntPtr]::Zero)
+    if ($PhysicalShortcuts) {
+        Stroke 0x69
+        Await-Condition { (Get-Content (Join-Path $previewProfileDirectory 'settings.json') -Raw | ConvertFrom-Json).filter -eq '-DONE' } 'Keypad 9 did not apply its filter preset.'
+        Stroke 0x60
+        Await-Condition { (Get-Content (Join-Path $previewProfileDirectory 'settings.json') -Raw | ConvertFrom-Json).filter -eq '' } 'Keypad 0 did not clear the filter.'
+    }
     Write-Output "PASS: filter suggestions, scrolling and saved preset 9. Starting printer checks."
     # A printer dialog can be opened/cancelled without submitting a print job.
     [void][TodoPreview]::PostMessage($root, 0x111, [IntPtr]113, [IntPtr]::Zero)
@@ -318,8 +423,11 @@ try {
     [void][TodoPreview]::PostMessage($dialog, 0x111, [IntPtr]2, [IntPtr]::Zero)
     Await-Condition { ![TodoPreview]::IsWindow($dialog) } 'About did not close.'
     Write-Output 'PASS: delayed empty-read guard retains task rows, pauses auto refresh, logs refusal, and identifies the running version.'
-    [void][TodoPreview]::PostMessage($root, 0x111, [IntPtr]133, [IntPtr]::Zero)
-    Await-Condition { $process.HasExited } 'File Exit did not quit with minimize-on-close enabled.'
+    if ($PhysicalShortcuts) {
+        [TodoPreview]::Foreground($root)
+        Stroke 0x73 $false $true
+    } else { [void][TodoPreview]::PostMessage($root, 0x111, [IntPtr]133, [IntPtr]::Zero) }
+    Await-Condition { $process.HasExited } 'File Exit/Alt+F4 did not quit with minimize-on-close enabled.'
     # Restart the isolated application to test tray Exit independently of File Exit.
     $process = Start-Process -FilePath ([IO.Path]::GetFullPath($Binary)) -ArgumentList '--demo', '--config-dir', ('"' + $previewProfileDirectory + '"') -WindowStyle Hidden -PassThru
     Await-Condition { $root = [TodoPreview]::FindRoot($process.Id); $root -ne [IntPtr]::Zero } 'Tray Exit test window did not appear.'
