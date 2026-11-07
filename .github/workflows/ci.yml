@@ -15,6 +15,8 @@ jobs:
       - name: Linux desktop libraries
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libx11-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev
+      - name: Project backlog is synchronized
+        run: python scripts/sync-backlog.py --check
       - run: cargo fmt --check
       - run: cargo test --locked
       - run: cargo clippy --locked --all-targets -- -D warnings

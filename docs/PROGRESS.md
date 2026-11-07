@@ -423,3 +423,23 @@ the filename Edit by its known initial done.txt text, avoiding ambiguous IDs,
 and sends character input after selecting its old text so the shell receives
 normal edit/combobox notifications. It verifies entered text before clicking
 Save, and retains the file-identity/content assertions afterward.
+
+## 2026-11-08: project task list and planning requests
+
+Made BACKLOG.md the source checklist for remaining parity/validation work and
+future ideas. Preserved and included the maintainer's pending Promote dated
+tasks entry. Recorded README reorganization and evaluating multiple task-file
+support, explicitly requiring a usefulness/complexity assessment before design.
+These ideas remain deferred; the README and application behavior are unchanged.
+
+Added root todo.txt, generated one way by scripts/sync-backlog.py using only the
+Python standard library. Each unchecked Markdown entry becomes one task with
++todotxt.rs, @parity or @deferred, and a source reference. Completed entries are
+omitted. Full requirements are retained on single lines. AGENTS.md requires
+regeneration with future backlog updates; CI rejects a stale generated list.
+
+Validation: generation/check mode, continuation text, CRLF input, completed-item
+omission, grouping and stale-output detection passed using temporary fictional
+examples. The generated list contains 20 pending project items. Formatting,
+40 task/file tests and strict all-target Clippy pass. This is planning and
+maintenance tooling only; no requested future application feature was implemented.

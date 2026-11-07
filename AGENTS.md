@@ -6,6 +6,14 @@ Read `docs/BACKLOG.md` for deferred requests. Do not implement those ideas befor
 parity with todotxt.net is achieved. Their recording is not authorization to
 begin implementation automatically; keep parity work as the current scope.
 
+`docs/BACKLOG.md` is the authoritative project checklist, including current
+parity/validation work and deferred ideas. Keep its current-work items aligned
+with `docs/PARITY.md`. After changing or completing backlog items, regenerate
+root `todo.txt` with `python scripts/sync-backlog.py`, then verify with
+`python scripts/sync-backlog.py --check`. Do not edit the generated task list
+independently; synchronization is one way from Markdown to todo.txt. Keep both
+files in the same commit. The generated tasks do not authorize deferred work.
+
 The goal is a faithful Windows/Linux Rust port of todotxt.net, not a redesigned
 task manager. Use the checked-out C# and XAML in `reference/todotxt.net` as the
 behavioral specification. Keep the reference checkout unmodified and retain
