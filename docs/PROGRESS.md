@@ -416,3 +416,10 @@ Failure diagnostics now read the actual current selection at failure time and
 include the isolated fixture log. The previous diagnostic string was evaluated
 before polling, so its empty "received" value was not reliable evidence that
 selection was empty. PowerShell 7 local smoke passes; hosted verification follows.
+
+Hosted diagnostics showed a valid but unchanged default Documents/done.txt
+selection, not an empty result or storage failure. The script now identifies
+the filename Edit by its known initial done.txt text, avoiding ambiguous IDs,
+and sends character input after selecting its old text so the shell receives
+normal edit/combobox notifications. It verifies entered text before clicking
+Save, and retains the file-identity/content assertions afterward.

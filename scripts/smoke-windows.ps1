@@ -24,21 +24,25 @@ public class TodoPreview {
     [DllImport("user32.dll")] public static extern bool EnumChildWindows(IntPtr h, EnumWindow callback, IntPtr p);
     [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr h);
     [DllImport("user32.dll")] public static extern IntPtr GetParent(IntPtr h);
-    public static IntPtr FilenameEdit(IntPtr picker) {
-        IntPtr field = GetDlgItem(picker, 1152);
-        if (field != IntPtr.Zero && IsWindowVisible(field)) return field;
+    public static IntPtr FilenameEdit(IntPtr picker, string initialName) {
         IntPtr found = IntPtr.Zero;
         EnumChildWindows(picker, (h, p) => {
             var name = new System.Text.StringBuilder(100); GetClassName(h, name, 100);
-            var parent = GetParent(h);
-            var parentName = new System.Text.StringBuilder(100); GetClassName(parent, parentName, 100);
-            // The address/search fields also use Edit/1001 on hosted Windows.
-            // The filename field belongs to the plain filename ComboBox.
-            if (name.ToString() == "Edit" && GetDlgCtrlID(h) == 1001
-                && parentName.ToString() == "ComboBox" && GetDlgCtrlID(parent) == 0) { found = h; return false; }
+            if (name.ToString() == "Edit" && IsWindowVisible(h)) {
+                string text = ControlText(h);
+                if (String.Equals(text, initialName, StringComparison.OrdinalIgnoreCase)
+                    || String.Equals(text, System.IO.Path.GetFileNameWithoutExtension(initialName), StringComparison.OrdinalIgnoreCase)) {
+                    found = h; return false;
+                }
+            }
             return true;
         }, IntPtr.Zero);
         return found;
+    }
+    public static void TypeText(IntPtr edit, string text) {
+        SendMessage(edit, 0xB1, IntPtr.Zero, (IntPtr)(-1)); // EM_SETSEL
+        // WM_CHAR generates the edit/combobox notifications used by shell dialogs.
+        foreach (char value in text) SendMessage(edit, 0x102, (IntPtr)value, (IntPtr)1);
     }
     [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr h, uint command);
     [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr h);
@@ -313,10 +317,12 @@ try {
     [void][TodoPreview]::PostMessage($dialog, 0x111, [IntPtr]105, [IntPtr]::Zero)
     Await-Condition { (Control-Class ([TodoPreview]::GetWindow($dialog, 6))) -eq '#32770' } 'Archive picker did not appear.'
     $picker = [TodoPreview]::GetWindow($dialog, 6)
-    Await-Condition { [TodoPreview]::FilenameEdit($picker) -ne [IntPtr]::Zero } 'Archive filename field did not appear.'
+    Await-Condition { [TodoPreview]::FilenameEdit($picker, 'done.txt') -ne [IntPtr]::Zero } 'Archive filename field did not appear.'
     # The hosted file picker can still be initializing after its Edit appears.
     Start-Sleep -Milliseconds 250
-    [void][TodoPreview]::SendMessage([TodoPreview]::FilenameEdit($picker), 0xC, [IntPtr]::Zero, $archive)
+    $filenameEdit = [TodoPreview]::FilenameEdit($picker, 'done.txt')
+    [TodoPreview]::TypeText($filenameEdit, $archive)
+    if ([TodoPreview]::ControlText($filenameEdit) -ne $archive) { throw 'Archive filename typing did not reach the selected filename field.' }
     Start-Sleep -Milliseconds 100
     $saveButton = [TodoPreview]::GetDlgItem($picker, 1)
     if ($saveButton -eq [IntPtr]::Zero) { throw 'Archive picker Save button is missing.' }
