@@ -409,3 +409,10 @@ local PowerShell 5 and portable PowerShell 7 both passed. Updated automation to
 wait for picker initialization and click its real Save button (BM_CLICK), rather
 than posting a parent WM_COMMAND without a source-control handle. Local
 PowerShell 7 native smoke passes with this route. Application code is unchanged.
+
+Hardened the hosted UI assertion further: read control text through a typed C#
+Win32 wrapper and compare the chosen file's identity, not its path spelling.
+Failure diagnostics now read the actual current selection at failure time and
+include the isolated fixture log. The previous diagnostic string was evaluated
+before polling, so its empty "received" value was not reliable evidence that
+selection was empty. PowerShell 7 local smoke passes; hosted verification follows.

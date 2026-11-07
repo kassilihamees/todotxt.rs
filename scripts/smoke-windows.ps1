@@ -47,6 +47,31 @@ public class TodoPreview {
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr SendMessage(IntPtr h, uint m, IntPtr w, System.Text.StringBuilder text);
     [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, System.Text.StringBuilder text, int count);
+    [StructLayout(LayoutKind.Sequential)] public struct FileIdentity {
+        public ulong Volume;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst=16)] public byte[] Id;
+    }
+    [DllImport("kernel32.dll", SetLastError=true)] public static extern bool GetFileInformationByHandleEx(IntPtr h, int type, out FileIdentity value, uint size);
+    public static bool SameFile(string left, string right) {
+        if (String.IsNullOrEmpty(left) || String.IsNullOrEmpty(right)) return false;
+        try {
+            using (var a = new System.IO.FileStream(left, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.ReadWrite | System.IO.FileShare.Delete))
+            using (var b = new System.IO.FileStream(right, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.ReadWrite | System.IO.FileShare.Delete)) {
+                FileIdentity x, y;
+                if (!GetFileInformationByHandleEx(a.SafeFileHandle.DangerousGetHandle(), 18, out x, 24)
+                    || !GetFileInformationByHandleEx(b.SafeFileHandle.DangerousGetHandle(), 18, out y, 24))
+                    throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+                if (x.Volume != y.Volume) return false;
+                for (int n = 0; n < 16; n++) if (x.Id[n] != y.Id[n]) return false;
+                return true;
+            }
+        } catch (System.IO.IOException) { return false; }
+    }
+    public static string ControlText(IntPtr h) {
+        var value = new System.Text.StringBuilder(32768);
+        SendMessage(h, 0xD, (IntPtr)value.Capacity, value);
+        return value.ToString();
+    }
     [DllImport("user32.dll")] public static extern uint SendInput(uint count, Input[] inputs, int size);
     [StructLayout(LayoutKind.Sequential)] public struct KeyboardInput { public ushort Key, Scan; public uint Flags, Time; public UIntPtr Extra; }
     [StructLayout(LayoutKind.Sequential)] public struct MouseInput { public int X, Y; public uint Data, Flags, Time; public UIntPtr Extra; }
@@ -298,11 +323,15 @@ try {
     # Click the real button so its notification includes the source HWND.
     [void][TodoPreview]::PostMessage($saveButton, 0xF5, [IntPtr]::Zero, [IntPtr]::Zero)
     Await-Condition { ![TodoPreview]::IsWindow($picker) } 'Archive selection did not finish directly; an overwrite confirmation may be blocking it.'
-    $archiveSelection = [Text.StringBuilder]::new(32768)
-    Await-Condition {
-        [void][TodoPreview]::SendMessage([TodoPreview]::GetDlgItem($dialog, 101), 0xD, [IntPtr]$archiveSelection.Capacity, $archiveSelection)
-        $archiveSelection.ToString() -eq $archive
-    } ('Options did not receive the selected archive path. Expected ' + $archive + '; received ' + $archiveSelection.ToString())
+    try {
+        Await-Condition {
+            $selectedArchive = [TodoPreview]::ControlText([TodoPreview]::GetDlgItem($dialog, 101))
+            [TodoPreview]::SameFile($selectedArchive, $archive)
+        } 'Options did not receive the selected archive file.'
+    } catch {
+        $receivedArchive = [TodoPreview]::ControlText([TodoPreview]::GetDlgItem($dialog, 101))
+        throw ('Options did not receive the selected archive file. Expected ' + $archive + '; received ' + $receivedArchive + '; Options alive=' + [TodoPreview]::IsWindow($dialog))
+    }
     if ([Convert]::ToBase64String([IO.File]::ReadAllBytes($archive)) -ne $archiveBytes) { throw 'Archive selection changed existing file contents.' }
     [void][TodoPreview]::PostMessage($dialog, 0x111, [IntPtr]2, [IntPtr]::Zero)
     Await-Condition { ![TodoPreview]::IsWindow($dialog) } 'Options did not close.'
@@ -495,7 +524,12 @@ try {
     Await-Condition { $process.HasExited } 'Tray Exit did not quit with minimize-on-close enabled.'
     Write-Output 'PASS: native controls, width/height reflow, maximize/minimize/restore, Enter/save, completion, dialog Enter, Options/font dialog, filter suggestions, printer cancellation, tray minimize/restore/close, hotkey routing, tray right-click/Exit, calendar, debug logging, forced Exit, external-change refusal/draft preservation, and screenshot.'
 }
-catch { Write-Output ("SMOKE FAILED: " + $_.Exception.Message); throw }
+catch {
+    Write-Output ("SMOKE FAILED: " + $_.Exception.Message)
+    $smokeLog = Join-Path $previewProfileDirectory 'error.log'
+    if (Test-Path -LiteralPath $smokeLog) { Get-Content -LiteralPath $smokeLog -Tail 12 | Write-Output }
+    throw
+}
 finally {
     $process.Refresh()
     if (!$process.HasExited) {
