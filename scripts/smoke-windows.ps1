@@ -23,13 +23,19 @@ public class TodoPreview {
     [DllImport("user32.dll")] public static extern IntPtr GetDlgItem(IntPtr h, int id);
     [DllImport("user32.dll")] public static extern bool EnumChildWindows(IntPtr h, EnumWindow callback, IntPtr p);
     [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr h);
+    [DllImport("user32.dll")] public static extern IntPtr GetParent(IntPtr h);
     public static IntPtr FilenameEdit(IntPtr picker) {
         IntPtr field = GetDlgItem(picker, 1152);
-        if (field != IntPtr.Zero) return field;
+        if (field != IntPtr.Zero && IsWindowVisible(field)) return field;
         IntPtr found = IntPtr.Zero;
         EnumChildWindows(picker, (h, p) => {
             var name = new System.Text.StringBuilder(100); GetClassName(h, name, 100);
-            if (name.ToString() == "Edit" && GetDlgCtrlID(h) == 1001) { found = h; return false; }
+            var parent = GetParent(h);
+            var parentName = new System.Text.StringBuilder(100); GetClassName(parent, parentName, 100);
+            // The address/search fields also use Edit/1001 on hosted Windows.
+            // The filename field belongs to the plain filename ComboBox.
+            if (name.ToString() == "Edit" && GetDlgCtrlID(h) == 1001
+                && parentName.ToString() == "ComboBox" && GetDlgCtrlID(parent) == 0) { found = h; return false; }
             return true;
         }, IntPtr.Zero);
         return found;
@@ -290,7 +296,7 @@ try {
     Await-Condition {
         [void][TodoPreview]::SendMessage([TodoPreview]::GetDlgItem($dialog, 101), 0xD, [IntPtr]$archiveSelection.Capacity, $archiveSelection)
         $archiveSelection.ToString() -eq $archive
-    } 'Options did not receive the selected archive path.'
+    } ('Options did not receive the selected archive path. Expected ' + $archive + '; received ' + $archiveSelection.ToString())
     if ([Convert]::ToBase64String([IO.File]::ReadAllBytes($archive)) -ne $archiveBytes) { throw 'Archive selection changed existing file contents.' }
     [void][TodoPreview]::PostMessage($dialog, 0x111, [IntPtr]2, [IntPtr]::Zero)
     Await-Condition { ![TodoPreview]::IsWindow($dialog) } 'Options did not close.'

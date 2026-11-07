@@ -396,3 +396,9 @@ all 19 library tests also pass under a real Windows short-name TEMP/TMP alias.
 Formatting, strict default/portable all-target Clippy, native release build and
 native Windows smoke checks pass. Hosted Windows/Linux validation is checked
 through the new Actions run; no local Linux desktop runtime claim is made.
+
+Hosted validation of 7f4d209: Linux passed the complete workflow. Windows passed
+all task/portable tests, both Clippy configurations and release build, then
+reached a separate UI smoke failure selecting the archive path. Tightened the
+filename-field locator to its ComboBox parent so hosted address/search edits
+sharing ID 1001 are not selected. No storage assertion or test was disabled.
