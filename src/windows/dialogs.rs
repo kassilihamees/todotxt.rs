@@ -1,5 +1,5 @@
 use super::*;
-use todotxt_rs::settings::Settings;
+use todotxt_rs::{document::SaveMethod, settings::Settings};
 use windows_sys::Win32::UI::Controls::Dialogs::*;
 
 pub(super) unsafe fn file_if_needed(
@@ -131,7 +131,7 @@ impl Dialog {
             Kind::Input { readonly: true, .. } => (500, 450),
             Kind::Input { .. } => (390, 160),
             Kind::Filters { .. } => (405, 600),
-            Kind::Options(_) => (510, 590),
+            Kind::Options(_) => (510, 660),
         };
         let mut owner: RECT = zeroed();
         GetWindowRect(self.parent, &mut owner);
@@ -382,11 +382,66 @@ impl Dialog {
                     );
                     self.controls.push(control);
                 }
+                let save_label = child(self.hwnd, w!("STATIC"), "Save method", 0, 109, self.font);
+                MoveWindow(
+                    save_label,
+                    scale(self.dpi, 12),
+                    scale(self.dpi, 445),
+                    scale(self.dpi, 90),
+                    scale(self.dpi, 23),
+                    1,
+                );
+                let method = child(
+                    self.hwnd,
+                    w!("COMBOBOX"),
+                    "",
+                    WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST as u32,
+                    110,
+                    self.font,
+                );
+                for value in [SaveMethod::Replace, SaveMethod::Direct] {
+                    SendMessageW(
+                        method,
+                        CB_ADDSTRING,
+                        0,
+                        wide(value.label()).as_ptr() as isize,
+                    );
+                }
+                SendMessageW(
+                    method,
+                    CB_SETCURSEL,
+                    usize::from(s.save_method == SaveMethod::Direct),
+                    0,
+                );
+                MoveWindow(
+                    method,
+                    scale(self.dpi, 108),
+                    scale(self.dpi, 442),
+                    scale(self.dpi, 370),
+                    scale(self.dpi, 140),
+                    1,
+                );
+                let note = child(
+                    self.hwnd,
+                    w!("STATIC"),
+                    "Both keep local recovery copies. Interrupted direct writes can leave a partial file.",
+                    0,
+                    111,
+                    self.font,
+                );
+                MoveWindow(
+                    note,
+                    scale(self.dpi, 12),
+                    scale(self.dpi, 477),
+                    scale(self.dpi, 460),
+                    scale(self.dpi, 35),
+                    1,
+                );
                 let label = child(self.hwnd, w!("STATIC"), "Task font size", 0, 106, self.font);
                 MoveWindow(
                     label,
                     scale(self.dpi, 12),
-                    scale(self.dpi, 445),
+                    scale(self.dpi, 520),
                     scale(self.dpi, 90),
                     scale(self.dpi, 23),
                     1,
@@ -402,7 +457,7 @@ impl Dialog {
                 MoveWindow(
                     size,
                     scale(self.dpi, 108),
-                    scale(self.dpi, 445),
+                    scale(self.dpi, 520),
                     scale(self.dpi, 70),
                     scale(self.dpi, 23),
                     1,
@@ -419,7 +474,7 @@ impl Dialog {
                 MoveWindow(
                     chooser,
                     scale(self.dpi, 200),
-                    scale(self.dpi, 445),
+                    scale(self.dpi, 520),
                     scale(self.dpi, 120),
                     scale(self.dpi, 25),
                     1,
@@ -602,6 +657,12 @@ impl Dialog {
                 settings.minimize_to_tray = values[12];
                 settings.minimize_on_close = values[13];
                 settings.debug_logging = values[14];
+                settings.save_method =
+                    if SendMessageW(GetDlgItem(self.hwnd, 110), CB_GETCURSEL, 0, 0) == 1 {
+                        SaveMethod::Direct
+                    } else {
+                        SaveMethod::Replace
+                    };
                 let Ok(size) = window_text(self.controls[15]).parse::<f32>() else {
                     error_box(self.hwnd, "Font size must be a number between 8 and 96.");
                     return;

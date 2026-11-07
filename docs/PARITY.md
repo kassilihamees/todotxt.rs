@@ -138,3 +138,16 @@ The shortcut source audit also found an existing gap: upstream Shift+9 begins a
 new task with a priority prefix and suggestions. That shortcut is not yet
 implemented in either frontend. Editor-focused list shortcuts intentionally
 remain native text editing, as documented in Help.
+
+## Configurable save method
+
+0.1.4-dev adds a shared Options > Save method selector to native Windows and the
+portable frontend. Temporary-file replacement remains the default for old and
+new preferences. Direct write (rclone compatibility) avoids temporary files and
+renames beside the task/archive, matching upstream StreamWriter's in-place save.
+Both methods require local recovery copies, check external bytes before writes,
+and verify saved bytes. Direct writes can leave partial files on interruption;
+recovery remains manual. File settings/recovery copies still use replacement.
+The option applies to open/newly opened documents, archive destinations, reloads
+and restarts. Successful local tests do not establish remote cloud durability
+or confirm that the affected computer's rclone failure is resolved.

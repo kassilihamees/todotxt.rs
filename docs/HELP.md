@@ -62,9 +62,15 @@ checks size and modification time without reopening unchanged file contents,
 so it does not continually defer rclone uploads. Same-size changes preserving
 mtime, or metadata hidden by mount caching, may need manual Reload. Save-time
 checks still compare the actual file contents before replacing anything.
-Saving closes and verifies the staged file, rechecks the source, and verifies
-the resulting destination. Local recovery copies retain previous and intended
-task contents before replacement. On Windows these are under
+Options > Save method offers Temporary file replacement (the default), or
+Direct write (rclone compatibility). Direct writing avoids replacing/renaming
+the mounted file; an interrupted write can leave a partial or empty file.
+Both methods preserve local previous/intended recovery copies before changing
+task or archive files, refuse external changes, and verify the saved contents.
+Direct writing checks the opened file before truncation. Failed backup creation
+blocks saving; failed replacement never automatically switches to direct writing.
+The selection applies immediately and persists across reloads and restarts.
+Local recovery copies retain previous and intended task contents. On Windows these are under
 %LOCALAPPDATA%\todotxt.rs\data\recovery. A failed save keeps the in-memory
 tasks, pauses automatic refresh, and reports the recovery folder. Check or
 restore the disk file before explicitly reloading. Cloud uploads can be delayed;

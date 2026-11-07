@@ -343,3 +343,33 @@ Clippy with default/portable features pass. Native release smoke checks pass
 with Windows SendInput for modifier arrows, duplicate, sort keys, calendar,
 reload, Options, tray hotkey and Alt+F4 with minimize-on-close enabled. The
 original upstream Shift+9 priority-prefill shortcut remains an audited gap.
+
+## Configurable direct writing for mounted files
+
+The maintainer requested a save-method option after the source comparison:
+upstream ToDoLib/TaskList.cs uses StreamWriter to truncate/rewrite directly,
+whereas our tempfile persistence replaces by rename. The supplied rclone log
+shows a cache-rename access-denied failure, followed by stale-cache removal.
+
+0.1.4-dev adds Temporary file replacement (default) and Direct write (rclone
+compatibility) in both Options dialogs, backed by the same serialized setting.
+The latter checks the opened file before truncating, writes/syncs/closes and
+verifies without creating or renaming a staged task/archive file. Both require
+local previous/intended recovery copies before writes. New archives use exclusive
+creation; no silent fallback or automatic retry is added. Direct writes can be
+partial on interruption, with failed snapshots and previous in-memory tasks
+retained. The setting applies immediately and survives reload/restart.
+
+Regression tests cover file identity, byte formatting, local recovery, external
+changes before truncation, archive creation/update, interrupted save recovery,
+backup failure and settings lifecycle. Native UI smoke checks exercise Cancel,
+selection persistence, actual direct completion saves, and restart.
+
+Validation: 38 task/file tests plus eight portable GUI tests pass, as do
+cargo fmt --check and strict all-target Clippy with default and portable-ui
+features. Native release smoke passes, including save-method defaults, Cancel,
+immediate direct completion through the existing file identity, persisted UI
+selection after restart, and the prior file-safety/tray/dialog checks. Only
+fictional fixtures were used; no affected-machine mount or Linux runtime was
+tested. Native smoke handles the expected hotkey-owner warning without touching
+the separately running user application.

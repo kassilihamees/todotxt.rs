@@ -1,5 +1,8 @@
 //! Preferences shared by the platform frontends.
-use crate::{document::atomic_write, view::Sort};
+use crate::{
+    document::{SaveMethod, atomic_write},
+    view::Sort,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     fs, io,
@@ -24,6 +27,7 @@ pub struct Settings {
     pub intellisense_case: bool,
     pub add_creation: bool,
     pub auto_refresh: bool,
+    pub save_method: SaveMethod,
     pub auto_archive: bool,
     pub auto_archive_path: bool,
     pub ctrl_enter: bool,
@@ -58,6 +62,7 @@ impl Default for Settings {
             intellisense_case: false,
             add_creation: false,
             auto_refresh: false,
+            save_method: SaveMethod::default(),
             auto_archive: false,
             auto_archive_path: false,
             ctrl_enter: false,

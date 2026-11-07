@@ -269,6 +269,11 @@ try {
     if ((Control-Class ([TodoPreview]::GetDlgItem($dialog, 101))) -ne 'Edit' -or (Control-Class ([TodoPreview]::GetDlgItem($dialog, 200))) -ne 'Button') {
         throw 'Options must use native Edit and Button controls.'
     }
+    $saveMethod = [TodoPreview]::GetDlgItem($dialog, 110)
+    if ((Control-Class $saveMethod) -ne 'ComboBox') { throw 'Save method must use a native combo box.' }
+    if ([TodoPreview]::SendMessage($saveMethod, 0x146, [IntPtr]::Zero, [IntPtr]::Zero).ToInt32() -ne 2) { throw 'Expected replacement and direct save methods.' }
+    if ([TodoPreview]::SendMessage($saveMethod, 0x147, [IntPtr]::Zero, [IntPtr]::Zero).ToInt32() -ne 0) { throw 'Existing preferences must default to temporary-file replacement.' }
+    [void][TodoPreview]::SendMessage($saveMethod, 0x14E, [IntPtr]1, [IntPtr]::Zero)
     # Selecting a nonempty archive must neither ask to overwrite it nor write it.
     $archive = Join-Path $previewProfileDirectory 'existing-archive.txt'
     $archiveText = "x 2026-10-01 Fictional archived smoke task`r`n"
@@ -289,6 +294,25 @@ try {
     if ([Convert]::ToBase64String([IO.File]::ReadAllBytes($archive)) -ne $archiveBytes) { throw 'Archive selection changed existing file contents.' }
     [void][TodoPreview]::PostMessage($dialog, 0x111, [IntPtr]2, [IntPtr]::Zero)
     Await-Condition { ![TodoPreview]::IsWindow($dialog) } 'Options did not close.'
+    $preferences = Join-Path $previewProfileDirectory 'settings.json'
+    if ((Get-Content $preferences -Raw | ConvertFrom-Json).save_method -ne 'Replace') { throw 'Cancel applied the direct-save preference.' }
+    [void][TodoPreview]::PostMessage($root, 0x111, [IntPtr]110, [IntPtr]::Zero)
+    Await-Condition { [TodoPreview]::GetDlgItem([TodoPreview]::GetWindow($root, 6), 110) -ne [IntPtr]::Zero } 'Save-method Options did not reopen.'
+    $dialog = [TodoPreview]::GetWindow($root, 6)
+    [void][TodoPreview]::SendMessage([TodoPreview]::GetDlgItem($dialog, 110), 0x14E, [IntPtr]1, [IntPtr]::Zero)
+    [void][TodoPreview]::PostMessage($dialog, 0x111, [IntPtr]1, [IntPtr]::Zero)
+    Await-Condition { ![TodoPreview]::IsWindow($dialog) } 'Save-method Options did not close.'
+    Await-Condition { (Get-Content $preferences -Raw | ConvertFrom-Json).save_method -eq 'Direct' } 'Direct-save selection did not persist.'
+    # A hard link sees a direct rewrite; replacement would leave it with old bytes.
+    $directAlias = Join-Path $previewProfileDirectory 'direct-save-alias.txt'
+    New-Item -ItemType HardLink -Path $directAlias -Target $todo | Out-Null
+    $beforeDirect = [Convert]::ToBase64String([IO.File]::ReadAllBytes($todo))
+    [void][TodoPreview]::SendMessage($root, 0x111, [IntPtr]107, [IntPtr]::Zero)
+    Await-Condition { [Convert]::ToBase64String([IO.File]::ReadAllBytes($todo)) -ne $beforeDirect } 'Completion did not save with direct writing.'
+    if ([Convert]::ToBase64String([IO.File]::ReadAllBytes($directAlias)) -ne [Convert]::ToBase64String([IO.File]::ReadAllBytes($todo))) { throw 'Save method did not apply to the already open document.' }
+    [void][TodoPreview]::SendMessage($root, 0x111, [IntPtr]107, [IntPtr]::Zero)
+    Await-Condition { [Convert]::ToBase64String([IO.File]::ReadAllBytes($todo)) -eq $beforeDirect } 'Direct completion toggle did not restore the fictional task.'
+    Write-Output 'PASS: save-method defaults, Cancel, persistence, and direct writing to the already open document.'
     Write-Output "PASS: original native smoke flows and non-destructive archive selection without overwrite confirmation. Starting filter form checks."
     # Filter fields and suggestions operate on the actual native controls.
     [void][TodoPreview]::PostMessage($root, 0x111, [IntPtr]111, [IntPtr]::Zero)
@@ -395,13 +419,15 @@ try {
     [void][TodoPreview]::SendMessage([TodoPreview]::GetDlgItem($dialog, 204), 0xF1, [IntPtr]1, [IntPtr]::Zero)
     [void][TodoPreview]::PostMessage($dialog, 0x111, [IntPtr]1, [IntPtr]::Zero)
     Await-Condition { ![TodoPreview]::IsWindow($dialog) } 'Auto-refresh Options did not close.'
+    Start-Sleep -Milliseconds 200
+    [void](Close-HotkeyConflictPopup $process.Id)
     $retainedRows = [TodoPreview]::SendMessage($list, 0x18B, [IntPtr]::Zero, [IntPtr]::Zero).ToInt32()
     [IO.File]::WriteAllText($todo, '')
     Await-Condition { (Control-Class ([TodoPreview]::GetWindow($root, 6))) -eq '#32770' } 'Empty-read guard did not show an error.'
     $errorDialog = [TodoPreview]::GetWindow($root, 6)
     $message = [Text.StringBuilder]::new(3000)
     [void][TodoPreview]::SendMessage([TodoPreview]::GetDlgItem($errorDialog, 65535), 0xD, [IntPtr]$message.Capacity, $message)
-    if (!$message.ToString().Contains('Reload refused')) { throw 'Expected the delayed empty-read protection error.' }
+    if (!$message.ToString().Contains('Reload refused')) { throw ('Expected the delayed empty-read protection error. Received: ' + $message.ToString()) }
     [void][TodoPreview]::PostMessage($errorDialog, 0x10, [IntPtr]::Zero, [IntPtr]::Zero)
     Await-Condition { ![TodoPreview]::IsWindow($errorDialog) } 'Empty-read error did not close.'
     Start-Sleep -Milliseconds 1200
@@ -435,6 +461,12 @@ try {
     [void][TodoPreview]::ShowWindow($root, 5)
     Start-Sleep -Milliseconds 250
     [void](Close-HotkeyConflictPopup $process.Id)
+    [void][TodoPreview]::PostMessage($root, 0x111, [IntPtr]110, [IntPtr]::Zero)
+    Await-Condition { [TodoPreview]::GetDlgItem([TodoPreview]::GetWindow($root, 6), 110) -ne [IntPtr]::Zero } 'Restarted Options did not appear.'
+    $dialog = [TodoPreview]::GetWindow($root, 6)
+    if ([TodoPreview]::SendMessage([TodoPreview]::GetDlgItem($dialog, 110), 0x147, [IntPtr]::Zero, [IntPtr]::Zero).ToInt32() -ne 1) { throw 'Direct save method did not survive restart.' }
+    [void][TodoPreview]::PostMessage($dialog, 0x111, [IntPtr]2, [IntPtr]::Zero)
+    Await-Condition { ![TodoPreview]::IsWindow($dialog) } 'Restarted Options did not close.'
     # Right-click must offer a real Exit entry even while the owner is hidden.
     [void][TodoPreview]::SendMessage($root, 0x112, [IntPtr]0xF020, [IntPtr]::Zero)
     Await-Condition { ![TodoPreview]::IsWindowVisible($root) } 'Window did not hide before the tray menu check.'

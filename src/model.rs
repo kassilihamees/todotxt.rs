@@ -80,7 +80,8 @@ impl Model {
         model
     }
     pub fn load(&mut self, path: &Path) -> io::Result<()> {
-        let document = Document::open(path)?;
+        let mut document = Document::open(path)?;
+        document.save_method = self.settings.save_method;
         self.settings.file = Some(document.path.clone());
         self.document = Some(document);
         self.draft.clear();
@@ -97,6 +98,9 @@ impl Model {
         self.settings.debug_event(&self.config_dir, event);
     }
     pub fn refresh(&mut self) {
+        if let Some(document) = &mut self.document {
+            document.save_method = self.settings.save_method;
+        }
         self.date = Local::now().date_naive();
         self.tasks = self
             .document

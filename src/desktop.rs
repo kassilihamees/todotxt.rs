@@ -8,7 +8,7 @@ use std::{
 };
 use todotxt_rs::settings::Settings;
 use todotxt_rs::{
-    document::{Document, atomic_write},
+    document::{Document, SaveMethod, atomic_write},
     task::{Task, parse_date, resolve_date},
     view::{self, Filter, Row, Sort},
 };
@@ -235,7 +235,8 @@ impl Desktop {
     }
     fn load(&mut self, path: PathBuf) {
         match Document::open(path) {
-            Ok(doc) => {
+            Ok(mut doc) => {
+                doc.save_method = self.settings.save_method;
                 self.settings.file = Some(doc.path.clone());
                 self.document = Some(doc);
                 self.selection.clear();
@@ -1340,6 +1341,15 @@ impl Desktop {
                 }
                 Dialog::Options(s) => {
                     ui.heading("Options");
+                    egui::ComboBox::from_label("Save method")
+                        .selected_text(s.save_method.label())
+                        .show_ui(ui, |ui| {
+                            for method in [SaveMethod::Replace, SaveMethod::Direct] {
+                                ui.selectable_value(&mut s.save_method, method, method.label());
+                            }
+                        });
+                    ui.label("Both keep local recovery copies. An interrupted direct write can leave a partial file.");
+                    ui.add_space(8.0);
                     ui.horizontal(|ui| {
                         ui.label("Archive File");
                         let mut path = s
@@ -1507,6 +1517,9 @@ impl Desktop {
                 }
                 Dialog::Options(settings) => {
                     self.settings = *settings.clone();
+                    if let Some(document) = &mut self.document {
+                        document.save_method = self.settings.save_method;
+                    }
                     self.refresh();
                     self.save_settings();
                 }

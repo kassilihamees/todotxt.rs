@@ -1,5 +1,5 @@
 use std::fs;
-use todotxt_rs::{model::Model, settings::Settings};
+use todotxt_rs::{document::SaveMethod, model::Model, settings::Settings};
 
 #[test]
 fn delayed_empty_reload_preserves_completed_tasks_selection_and_draft() {
@@ -92,6 +92,7 @@ fn old_preferences_keep_safe_defaults_and_new_preferences_round_trip() {
     assert!(!settings.minimize_to_tray);
     assert!(!settings.minimize_on_close);
     assert!(!settings.debug_logging);
+    assert_eq!(settings.save_method, SaveMethod::Replace);
     assert_eq!(settings.font_family, "Segoe UI");
     settings.font_family = "Consolas".into();
     settings.font_size = 18.0;
@@ -103,6 +104,7 @@ fn old_preferences_keep_safe_defaults_and_new_preferences_round_trip() {
     settings.minimize_to_tray = true;
     settings.minimize_on_close = true;
     settings.debug_logging = true;
+    settings.save_method = SaveMethod::Direct;
     settings.save(dir.path()).unwrap();
     let restored = Settings::read(dir.path()).unwrap();
     assert_eq!(
@@ -149,4 +151,44 @@ fn printable_table_has_dates_groups_escaped_details_and_one_copy_of_each_tag() {
     assert_eq!(html.matches("+demo").count(), 1);
     assert_eq!(html.matches("@desk").count(), 1);
     assert!(!html.contains("<fictional>"));
+}
+
+#[test]
+fn saved_direct_method_applies_on_load_reload_restart_and_setting_change() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("todo.txt");
+    let alias = dir.path().join("same-file.txt");
+    let config = dir.path().join("config");
+    fs::create_dir(&config).unwrap();
+    fs::write(&path, "Fictional task\n").unwrap();
+    fs::hard_link(&path, &alias).unwrap();
+    let settings = Settings {
+        save_method: SaveMethod::Direct,
+        ..Settings::default()
+    };
+    settings.save(&config).unwrap();
+    let mut model = Model::new(Some(path.clone()), Some(config.clone()), false);
+    assert_eq!(
+        model.document.as_ref().unwrap().save_method,
+        SaveMethod::Direct
+    );
+    let date = model.date;
+    model.modify(|task| Some(task.toggle(date))).unwrap();
+    assert_eq!(fs::read(&path).unwrap(), fs::read(&alias).unwrap());
+    model.reload().unwrap();
+    assert_eq!(
+        model.document.as_ref().unwrap().save_method,
+        SaveMethod::Direct
+    );
+    let mut restarted = Model::new(None, Some(config), false);
+    assert_eq!(
+        restarted.document.as_ref().unwrap().save_method,
+        SaveMethod::Direct
+    );
+    restarted.settings.save_method = SaveMethod::Replace;
+    restarted.refresh();
+    assert_eq!(
+        restarted.document.as_ref().unwrap().save_method,
+        SaveMethod::Replace
+    );
 }

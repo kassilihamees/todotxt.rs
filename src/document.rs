@@ -3,10 +3,27 @@ use chrono::NaiveDate;
 use std::{
     collections::BTreeMap,
     fs,
-    io::{self, Write},
+    io::{self, Read, Seek, Write},
     path::{Path, PathBuf},
     time::SystemTime,
 };
+
+/// How task and archive files are saved. Recovery files always use replacement.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum SaveMethod {
+    #[default]
+    Replace,
+    Direct,
+}
+
+impl SaveMethod {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Replace => "Temporary file replacement (default)",
+            Self::Direct => "Direct write (rclone compatibility)",
+        }
+    }
+}
 
 fn invalid(message: impl Into<String>) -> io::Error {
     io::Error::other(message.into())
@@ -117,6 +134,10 @@ fn atomic_write_checked(
     }
     before_replace()?;
     replace(staged, path)?;
+    verify_saved(path, bytes)
+}
+
+fn verify_saved(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let saved_bytes = fs::read(path)?;
     if saved_bytes != bytes {
         return Err(invalid(format!(
@@ -126,6 +147,50 @@ fn atomic_write_checked(
         )));
     }
     Ok(())
+}
+
+fn direct_write_checked(
+    path: &Path,
+    bytes: &[u8],
+    previous: Option<&[u8]>,
+    before_write: impl FnOnce() -> io::Result<()>,
+) -> io::Result<()> {
+    before_write()?;
+    // Open without truncating first. Check the actual handle's bytes before
+    // destroying anything; a newly created archive must not replace another file.
+    let mut options = fs::OpenOptions::new();
+    options.read(true).write(true);
+    if previous.is_none() {
+        options.create_new(true);
+    }
+    let mut file = options.open(path)?;
+    let mut current = Vec::new();
+    file.read_to_end(&mut current)?;
+    if current != previous.unwrap_or_default() {
+        return Err(invalid(
+            "The file changed outside the application. Direct writing was refused before truncation.",
+        ));
+    }
+    file.rewind()?;
+    file.set_len(0)?;
+    file.write_all(bytes)?;
+    file.sync_all()?;
+    drop(file);
+    verify_saved(path, bytes)
+}
+
+fn write_with_method(
+    path: &Path,
+    bytes: &[u8],
+    previous: Option<&[u8]>,
+    method: SaveMethod,
+    before_write: impl FnOnce() -> io::Result<()>,
+    replace: impl FnOnce(tempfile::TempPath, &Path) -> io::Result<()>,
+) -> io::Result<()> {
+    match method {
+        SaveMethod::Replace => atomic_write_checked(path, bytes, before_write, replace),
+        SaveMethod::Direct => direct_write_checked(path, bytes, previous, before_write),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -148,6 +213,7 @@ impl FileStamp {
 pub struct Document {
     pub path: PathBuf,
     pub lines: Vec<String>,
+    pub save_method: SaveMethod,
     original: Vec<u8>,
     stamp: Option<FileStamp>,
     newline: String,
@@ -188,6 +254,7 @@ impl Document {
         Ok(Self {
             path,
             lines,
+            save_method: SaveMethod::default(),
             original,
             stamp,
             newline,
@@ -233,6 +300,7 @@ impl Document {
     pub fn reload(&mut self) -> io::Result<()> {
         let mut candidate = Self::open(&self.path)?;
         candidate.recovery_root = self.recovery_root.clone();
+        candidate.save_method = self.save_method;
         if self.lines.iter().any(|line| !line.trim().is_empty())
             && candidate.lines.iter().all(|line| line.trim().is_empty())
         {
@@ -286,12 +354,27 @@ impl Document {
         lines: Vec<String>,
         replace: impl FnOnce(tempfile::TempPath, &Path) -> io::Result<()>,
     ) -> io::Result<()> {
+        self.commit_using(lines, |document, bytes| {
+            write_with_method(
+                &document.path,
+                bytes,
+                Some(&document.original),
+                document.save_method,
+                || document.ensure_unchanged(),
+                replace,
+            )
+        })
+    }
+
+    fn commit_using(
+        &mut self,
+        lines: Vec<String>,
+        save: impl FnOnce(&Self, &[u8]) -> io::Result<()>,
+    ) -> io::Result<()> {
         self.ensure_unchanged()?;
         let bytes = self.encoded(&lines);
         let recovery = self.recovery_copy(&self.path, &self.original, &bytes)?;
-        if let Err(error) =
-            atomic_write_checked(&self.path, &bytes, || self.ensure_unchanged(), replace)
-        {
+        if let Err(error) = save(self, &bytes) {
             self.failed_save = true;
             let recovery = preserve_failed_recovery(&recovery);
             return Err(invalid(format!(
@@ -374,12 +457,12 @@ impl Document {
         if completed.is_empty() {
             return Ok(0);
         }
-        let mut archived = match fs::read(&target) {
-            Ok(b) => b,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => Vec::new(),
+        let previous_archive = match fs::read(&target) {
+            Ok(b) => Some(b),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => None,
             Err(e) => return Err(e),
         };
-        let previous_archive = archived.clone();
+        let mut archived = previous_archive.clone().unwrap_or_default();
         let archive_newline =
             if archived.contains(&b'\n') && !archived.windows(2).any(|w| w == b"\r\n") {
                 "\n"
@@ -394,15 +477,21 @@ impl Document {
             archived.extend(archive_newline.as_bytes());
         }
         // Archive first: failure removing from source can duplicate tasks, but cannot lose them.
-        let recovery = self.recovery_copy(&target, &previous_archive, &archived)?;
-        atomic_write_checked(
+        let recovery = self.recovery_copy(
+            &target,
+            previous_archive.as_deref().unwrap_or_default(),
+            &archived,
+        )?;
+        write_with_method(
             &target,
             &archived,
+            previous_archive.as_deref(),
+            self.save_method,
             || {
                 self.ensure_unchanged()?;
                 let current = match fs::read(&target) {
-                    Ok(bytes) => bytes,
-                    Err(error) if error.kind() == io::ErrorKind::NotFound => Vec::new(),
+                    Ok(bytes) => Some(bytes),
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => None,
                     Err(error) => return Err(error),
                 };
                 if current != previous_archive {
@@ -436,6 +525,154 @@ mod mount_tests {
 
     fn unsupported_volume(_: &Path) -> io::Result<PathBuf> {
         Err(io::Error::from_raw_os_error(1005))
+    }
+
+    #[test]
+    fn direct_save_preserves_file_identity_bytes_and_recovery_without_replacement() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("todo.txt");
+        let alias = dir.path().join("same-file.txt");
+        let original = b"\xef\xbb\xbfFirst fictional task\r\n\r\nSecond fictional task\r\n";
+        fs::write(&path, original).unwrap();
+        fs::hard_link(&path, &alias).unwrap();
+        let mut doc = Document::open(&path).unwrap();
+        doc.save_method = SaveMethod::Direct;
+        doc.recovery_root = dir.path().join("recovery");
+        let mut lines = doc.lines.clone();
+        lines[0] = "x 2026-11-07 First fictional task".into();
+        let intended = doc.encoded(&lines);
+        doc.commit_with(lines, |_, _| {
+            panic!("Direct saving must never rename a staged file")
+        })
+        .unwrap();
+        assert_eq!(fs::read(&path).unwrap(), intended);
+        assert_eq!(fs::read(&alias).unwrap(), intended);
+        let folder = fs::read_dir(&doc.recovery_root)
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        assert_eq!(fs::read(folder.join("previous.txt")).unwrap(), original);
+        assert_eq!(fs::read(folder.join("intended.txt")).unwrap(), intended);
+        assert!(!doc.poll_changed().unwrap());
+        doc.reload().unwrap();
+        assert_eq!(doc.save_method, SaveMethod::Direct);
+        doc.add("Another fictional task").unwrap();
+        assert_eq!(fs::read(&path).unwrap(), fs::read(&alias).unwrap());
+        fs::write(&path, b"External fictional task\r\n").unwrap();
+        assert!(doc.add("Refused task").is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"External fictional task\r\n");
+    }
+
+    #[test]
+    fn direct_write_rechecks_opened_file_and_never_overwrites_a_new_archive() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("todo.txt");
+        fs::write(&path, b"Original fictional task").unwrap();
+        let error = direct_write_checked(
+            &path,
+            b"Intended task",
+            Some(b"Original fictional task"),
+            || fs::write(&path, b"External fictional change"),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("before truncation"));
+        assert_eq!(fs::read(&path).unwrap(), b"External fictional change");
+        assert!(direct_write_checked(&path, b"Archive", None, || Ok(())).is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"External fictional change");
+        let missing = dir.path().join("missing.txt");
+        assert!(direct_write_checked(&missing, b"Task", Some(b"Old task"), || Ok(())).is_err());
+        assert!(!missing.exists());
+    }
+
+    #[test]
+    fn direct_save_requires_recovery_before_changing_the_destination() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("todo.txt");
+        fs::write(&path, b"Fictional task\n").unwrap();
+        let mut doc = Document::open(&path).unwrap();
+        doc.save_method = SaveMethod::Direct;
+        doc.recovery_root = dir.path().join("not-a-directory");
+        fs::write(&doc.recovery_root, b"Recovery unavailable").unwrap();
+        assert!(doc.add("Must not write").is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"Fictional task\n");
+    }
+
+    #[test]
+    fn interrupted_direct_save_keeps_memory_and_separate_recovery_snapshots() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("todo.txt");
+        let original = b"First fictional task\nSecond fictional task\n";
+        fs::write(&path, original).unwrap();
+        let mut doc = Document::open(&path).unwrap();
+        doc.save_method = SaveMethod::Direct;
+        doc.recovery_root = dir.path().join("recovery");
+        let lines = vec!["Changed fictional task".into()];
+        let intended = doc.encoded(&lines);
+        // Fault injection after truncation, as with an interrupted write.
+        let error = doc
+            .commit_using(lines, |document, _| {
+                let mut file = fs::OpenOptions::new()
+                    .write(true)
+                    .truncate(true)
+                    .open(&document.path)?;
+                file.write_all(b"partial")?;
+                Err(invalid("Simulated interrupted direct write"))
+            })
+            .unwrap_err();
+        assert!(error.to_string().contains("Automatic refresh is paused"));
+        assert_eq!(doc.original, original);
+        assert_eq!(doc.lines, ["First fictional task", "Second fictional task"]);
+        assert!(!doc.can_auto_reload());
+        assert_eq!(fs::read(&path).unwrap(), b"partial");
+        let folder = fs::read_dir(&doc.recovery_root)
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        let failed = fs::read_dir(folder)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .find(|p| p.is_dir())
+            .unwrap();
+        assert_eq!(fs::read(failed.join("previous.txt")).unwrap(), original);
+        assert_eq!(fs::read(failed.join("intended.txt")).unwrap(), intended);
+    }
+
+    #[test]
+    fn direct_archiving_creates_or_updates_archive_without_replacing_either_file() {
+        for existing in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("todo.txt");
+            let alias = dir.path().join("source-alias.txt");
+            let archive = dir.path().join("done.txt");
+            let archive_alias = dir.path().join("archive-alias.txt");
+            fs::write(
+                &path,
+                b"Active fictional task\nx 2026-11-07 Completed fictional task\n",
+            )
+            .unwrap();
+            fs::hard_link(&path, &alias).unwrap();
+            if existing {
+                fs::write(&archive, b"Previously archived fictional task\n").unwrap();
+                fs::hard_link(&archive, &archive_alias).unwrap();
+            }
+            let mut doc = Document::open(&path).unwrap();
+            doc.save_method = SaveMethod::Direct;
+            doc.recovery_root = dir.path().join("recovery");
+            doc.archive(&archive, NaiveDate::from_ymd_opt(2026, 11, 7).unwrap())
+                .unwrap();
+            assert_eq!(fs::read(&path).unwrap(), b"Active fictional task\n");
+            assert_eq!(fs::read(&alias).unwrap(), fs::read(&path).unwrap());
+            let actual = fs::read_to_string(&archive).unwrap();
+            assert!(actual.ends_with("x 2026-11-07 Completed fictional task\n"));
+            if existing {
+                assert!(actual.starts_with("Previously archived fictional task\n"));
+                assert_eq!(fs::read(&archive_alias).unwrap(), actual.as_bytes());
+            }
+        }
     }
 
     #[cfg(windows)]

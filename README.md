@@ -11,7 +11,7 @@ See the [release notes](docs/releases/v0.1.1.md) for validation and known gaps.
 Mounted-file saving remains under investigation after further data-loss reports.
 Both v0.1.0 and v0.1.1 now carry warnings and are marked as prereleases. Keep
 the executable and working task file on ordinary local storage until this is
-resolved. The current development build is 0.1.3-dev; it guards delayed empty
+resolved. The current development build is 0.1.4-dev; it guards delayed empty
 reloads and identifies its version in About and optional startup debug events.
 Version numbers are independent of the reference todotxt.net 3.3.1.0.
 
@@ -195,10 +195,27 @@ when opening the file, automatic refresh stays unavailable until a successful
 reload/save obtains it. Every save still compares the full original bytes and
 refuses external changes, regardless of timestamps.
 
-Writes sync and close a temporary file in the same directory, read its bytes
-back, recheck the source, replace the destination, and read the destination back.
+Options > Save method selects how task and archive files are saved. Existing
+and new preferences default to **Temporary file replacement**: sync and close
+a temporary file in the same directory, verify its bytes, recheck the source,
+then replace and verify the destination.
+
+**Direct write (rclone compatibility)** keeps the destination file in place.
+After saving local recovery copies and rechecking external changes, it opens
+the file without truncation, checks the bytes through that handle, then
+truncates, rewrites, syncs, closes and verifies it. This avoids renaming files
+inside the mounted cache, matching the original app's direct-writing approach.
+A new archive is created exclusively so it cannot overwrite a concurrently
+created file. The selection applies immediately to the open document and archive,
+and persists across reloads/restarts in both frontends. It is an explicit choice;
+a failed replacement never silently falls back to direct writing.
+
+An interrupted direct write can leave a partial or empty destination. Both
+methods require local previous/intended recovery copies before changing task
+or archive files; if backup creation fails, saving stops before modifying them.
+Settings and recovery files themselves continue to use temporary-file replacement.
 A successful filesystem return alone is not accepted as proof that saving worked.
-Before document or archive replacement, local recovery copies retain the previous
+Before document or archive writes, local recovery copies retain the previous
 and intended contents under the user's local data directory. Windows uses
 `%LOCALAPPDATA%\todotxt.rs\data\recovery`; Linux uses
 `${XDG_DATA_HOME:-~/.local/share}/todotxt.rs/recovery`. The per-file folders contain
@@ -228,7 +245,7 @@ permission flags are retained (Unix mode bits or the Windows read-only flag);
 replacement does not preserve every OS-specific attribute or ACL. This is
 conflict detection, not a lock shared with
 other editors or sync tools: there is still a small race between the comparison
-and replacement. Keep normal backups for sync workflows.
+and the final write. Keep normal backups for sync workflows.
 
 Archiving appends completed tasks to the chosen archive, then removes them from
 the source. Selecting an archive path in Windows Options only sets the destination;
