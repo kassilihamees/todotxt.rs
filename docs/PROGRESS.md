@@ -402,3 +402,10 @@ all task/portable tests, both Clippy configurations and release build, then
 reached a separate UI smoke failure selecting the archive path. Tightened the
 filename-field locator to its ComboBox parent so hosted address/search edits
 sharing ID 1001 are not selected. No storage assertion or test was disabled.
+
+The quick ad hoc Filter... request is recorded in BACKLOG.md without implementation.
+The hosted picker check still returned no path after the locator correction;
+local PowerShell 5 and portable PowerShell 7 both passed. Updated automation to
+wait for picker initialization and click its real Save button (BM_CLICK), rather
+than posting a parent WM_COMMAND without a source-control handle. Local
+PowerShell 7 native smoke passes with this route. Application code is unchanged.

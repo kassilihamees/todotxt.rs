@@ -289,8 +289,14 @@ try {
     Await-Condition { (Control-Class ([TodoPreview]::GetWindow($dialog, 6))) -eq '#32770' } 'Archive picker did not appear.'
     $picker = [TodoPreview]::GetWindow($dialog, 6)
     Await-Condition { [TodoPreview]::FilenameEdit($picker) -ne [IntPtr]::Zero } 'Archive filename field did not appear.'
+    # The hosted file picker can still be initializing after its Edit appears.
+    Start-Sleep -Milliseconds 250
     [void][TodoPreview]::SendMessage([TodoPreview]::FilenameEdit($picker), 0xC, [IntPtr]::Zero, $archive)
-    [void][TodoPreview]::PostMessage($picker, 0x111, [IntPtr]1, [IntPtr]::Zero)
+    Start-Sleep -Milliseconds 100
+    $saveButton = [TodoPreview]::GetDlgItem($picker, 1)
+    if ($saveButton -eq [IntPtr]::Zero) { throw 'Archive picker Save button is missing.' }
+    # Click the real button so its notification includes the source HWND.
+    [void][TodoPreview]::PostMessage($saveButton, 0xF5, [IntPtr]::Zero, [IntPtr]::Zero)
     Await-Condition { ![TodoPreview]::IsWindow($picker) } 'Archive selection did not finish directly; an overwrite confirmation may be blocking it.'
     $archiveSelection = [Text.StringBuilder]::new(32768)
     Await-Condition {

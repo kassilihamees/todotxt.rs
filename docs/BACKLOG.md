@@ -22,6 +22,12 @@ features or authorization to start them automatically after parity.
   syntax, due/threshold date handling, and recurrence behavior before building
   it; preserve the plain todo.txt format.
 
+- [ ] **Quick ad hoc filter.** Add a separate Filter... command to the Filter
+  menu, opening a simple text input instead of the preset-definition dialog.
+  Apply the entered text as the active filter and retain it until it is changed,
+  cleared, or replaced by another filter/preset. Keep it separate from editing
+  saved preset definitions; decide restart persistence when implementing.
+
 - [ ] **OR filters and clear documentation.** Allow one filter to include tasks
   from either of two projects, alongside existing AND and exclusion conditions.
   For example, the intended query is `(project A OR project B) AND incomplete`;
