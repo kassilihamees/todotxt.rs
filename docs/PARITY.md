@@ -151,3 +151,13 @@ recovery remains manual. File settings/recovery copies still use replacement.
 The option applies to open/newly opened documents, archive destinations, reloads
 and restarts. Successful local tests do not establish remote cloud durability
 or confirm that the affected computer's rclone failure is resolved.
+
+## Self-archive aliases (2026-11-08)
+
+0.1.5-dev fixes a reproduced Windows self-archive failure with short (8.3) versus
+long path aliases. Text-only comparison missed that both paths named the same
+file, so archive append happened before the source-change check failed. Archive
+selection now additionally compares canonical paths and available filesystem
+identities (128-bit Windows file IDs, Unix device/inode). Unsupported mounted
+metadata is optional. Both save methods reject short-path and hard-link aliases
+before creating recovery copies or changing archive/source contents.

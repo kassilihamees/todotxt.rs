@@ -373,3 +373,26 @@ selection after restart, and the prior file-safety/tray/dialog checks. Only
 fictional fixtures were used; no affected-machine mount or Linux runtime was
 tested. Native smoke handles the expected hotkey-owner warning without touching
 the separately running user application.
+
+## 2026-11-08: Windows self-archive CI failure
+
+The f9ff3d6 Windows Actions job reproduced the existing self-archive test failure;
+Linux was cancelled by matrix fail-fast. Reproduced locally with the unchanged
+test by setting the child test process TEMP/TMP to a fictional directory's 8.3
+alias. Archive fallback kept the short spelling while the document used its
+canonical long path. Text comparison missed the same file, archive append
+duplicated its contents, then source-change protection stopped removal.
+
+0.1.5-dev resolves both existing paths where supported and compares available
+file identities for other aliases, including hard links. Windows uses
+attribute-only handles and 128-bit file IDs; Unix uses device/inode. Unsupported
+mounted metadata remains optional. Added regressions for actual short paths and
+hard links in both save modes; rejection must happen before backups or writes.
+CI now lets both platform jobs finish independently instead of cancelling the
+other platform on failure. The original regression remains enabled.
+
+Local validation: all 40 task/file tests and eight portable GUI tests pass;
+all 19 library tests also pass under a real Windows short-name TEMP/TMP alias.
+Formatting, strict default/portable all-target Clippy, native release build and
+native Windows smoke checks pass. Hosted Windows/Linux validation is checked
+through the new Actions run; no local Linux desktop runtime claim is made.

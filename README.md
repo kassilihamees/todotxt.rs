@@ -11,7 +11,7 @@ See the [release notes](docs/releases/v0.1.1.md) for validation and known gaps.
 Mounted-file saving remains under investigation after further data-loss reports.
 Both v0.1.0 and v0.1.1 now carry warnings and are marked as prereleases. Keep
 the executable and working task file on ordinary local storage until this is
-resolved. The current development build is 0.1.4-dev; it guards delayed empty
+resolved. The current development build is 0.1.5-dev; it guards delayed empty
 reloads and identifies its version in About and optional startup debug events.
 Version numbers are independent of the reference todotxt.net 3.3.1.0.
 
@@ -251,7 +251,9 @@ Archiving appends completed tasks to the chosen archive, then removes them from
 the source. Selecting an archive path in Windows Options only sets the destination;
 it does not overwrite or otherwise change that file. Existing archives receive
 appended tasks when archiving runs. Automatically select archive path chooses `done.txt` beside the
-todo file. Source and archive must be different files. The two-file operation
+todo file. Source and archive must be different files. Self-archive checks resolve path
+aliases and compare available filesystem file IDs, including Windows short
+names and hard links. The two-file operation
 is not atomic: if source removal fails after the archive write succeeds, the
 dialog explains that completed tasks remain in both files. Resolve those
 duplicates before archiving again. An archive failure leaves the source intact.

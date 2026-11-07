@@ -95,6 +95,64 @@ fn same_path(a: &Path, b: &Path) -> bool {
     }
 }
 
+// Canonical paths can differ from their Windows short-name aliases, and hard
+// links can have unrelated names. Reject aliases before making recovery copies
+// or touching the archive. Unsupported mount metadata remains optional.
+fn same_file(a: &Path, b: &Path) -> bool {
+    if same_path(a, b) {
+        return true;
+    }
+    if let (Ok(a), Ok(b)) = (fs::canonicalize(a), fs::canonicalize(b))
+        && same_path(&a, &b)
+    {
+        return true;
+    }
+    same_file_id(a, b).unwrap_or(false)
+}
+
+#[cfg(windows)]
+fn same_file_id(a: &Path, b: &Path) -> Option<bool> {
+    use std::{
+        mem::{size_of, zeroed},
+        os::windows::{fs::OpenOptionsExt, io::AsRawHandle},
+    };
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_ID_INFO, FileIdInfo, GetFileInformationByHandleEx,
+    };
+    fn identity(path: &Path) -> Option<(u64, [u8; 16])> {
+        // Attribute-only handles do not open file contents or request a write.
+        let file = fs::OpenOptions::new().access_mode(0).open(path).ok()?;
+        let mut info: FILE_ID_INFO = unsafe { zeroed() };
+        if unsafe {
+            GetFileInformationByHandleEx(
+                file.as_raw_handle(),
+                FileIdInfo,
+                (&mut info as *mut FILE_ID_INFO).cast(),
+                size_of::<FILE_ID_INFO>() as u32,
+            )
+        } == 0
+            || info.FileId.Identifier == [0; 16]
+        {
+            return None;
+        }
+        Some((info.VolumeSerialNumber, info.FileId.Identifier))
+    }
+    Some(identity(a)? == identity(b)?)
+}
+
+#[cfg(unix)]
+fn same_file_id(a: &Path, b: &Path) -> Option<bool> {
+    use std::os::unix::fs::MetadataExt;
+    let a = fs::metadata(a).ok()?;
+    let b = fs::metadata(b).ok()?;
+    Some((a.dev(), a.ino()) == (b.dev(), b.ino()))
+}
+
+#[cfg(not(any(windows, unix)))]
+fn same_file_id(_: &Path, _: &Path) -> Option<bool> {
+    None
+}
+
 /// Stage, close, verify, replace, then verify again. Mounted filesystems may
 /// mishandle renaming a file while its write handle is still open.
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
@@ -443,7 +501,7 @@ impl Document {
     ) -> io::Result<usize> {
         self.ensure_unchanged()?;
         let target = resolved_path(target, canonicalize)?;
-        if same_path(&target, &self.path) {
+        if same_file(&target, &self.path) {
             return Err(invalid(
                 "The archive file must be different from the todo file.",
             ));
@@ -963,6 +1021,7 @@ mod mount_tests {
         let original = "x 2026-10-09 Completed fictional task\n";
         fs::write(&path, original).unwrap();
         let mut doc = Document::open(&path).unwrap();
+        doc.recovery_root = dir.path().join("recovery");
         let target = PathBuf::from(
             std::path::absolute(&path)
                 .unwrap()
@@ -979,5 +1038,75 @@ mod mount_tests {
         );
         assert_eq!(fs::read_to_string(&path).unwrap(), original);
         assert_eq!(doc.lines, [original.trim_end()]);
+        assert!(
+            !doc.recovery_root.exists(),
+            "Self-archive must stop before recovery or writes"
+        );
+    }
+
+    #[test]
+    fn self_archive_is_rejected_through_hard_links_in_both_save_modes() {
+        for method in [SaveMethod::Replace, SaveMethod::Direct] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("todo.txt");
+            let alias = dir.path().join("archive-alias.txt");
+            let original = b"x 2026-11-08 Completed fictional task\n";
+            fs::write(&path, original).unwrap();
+            fs::hard_link(&path, &alias).unwrap();
+            assert_eq!(same_file_id(&path, &alias), Some(true));
+            let different = dir.path().join("different.txt");
+            fs::write(&different, original).unwrap();
+            assert_eq!(same_file_id(&path, &different), Some(false));
+            let mut doc = Document::open(&path).unwrap();
+            doc.save_method = method;
+            doc.recovery_root = dir.path().join("recovery");
+            let error = doc
+                .archive_with(
+                    &alias,
+                    NaiveDate::from_ymd_opt(2026, 11, 8).unwrap(),
+                    unsupported_volume,
+                )
+                .unwrap_err();
+            assert!(error.to_string().contains("different from the todo file"));
+            assert_eq!(fs::read(&path).unwrap(), original);
+            assert_eq!(fs::read(&alias).unwrap(), original);
+            assert_eq!(doc.original, original);
+            assert!(!doc.recovery_root.exists());
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn self_archive_is_rejected_through_short_paths_in_both_save_modes() {
+        use std::os::windows::ffi::{OsStrExt, OsStringExt};
+        use windows_sys::Win32::Storage::FileSystem::GetShortPathNameW;
+        for method in [SaveMethod::Replace, SaveMethod::Direct] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("Fictional completed tasks.todo");
+            let original = b"x 2026-11-08 Completed fictional task\n";
+            fs::write(&path, original).unwrap();
+            let input: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+            let mut buffer = vec![0u16; 32768];
+            let length = unsafe {
+                GetShortPathNameW(input.as_ptr(), buffer.as_mut_ptr(), buffer.len() as u32)
+            };
+            assert!(length > 0 && (length as usize) < buffer.len());
+            // On volumes without 8.3 names this can return the long spelling.
+            let alias = PathBuf::from(std::ffi::OsString::from_wide(&buffer[..length as usize]));
+            let mut doc = Document::open(&path).unwrap();
+            doc.save_method = method;
+            doc.recovery_root = dir.path().join("recovery");
+            let error = doc
+                .archive_with(
+                    &alias,
+                    NaiveDate::from_ymd_opt(2026, 11, 8).unwrap(),
+                    unsupported_volume,
+                )
+                .unwrap_err();
+            assert!(error.to_string().contains("different from the todo file"));
+            assert_eq!(fs::read(&path).unwrap(), original);
+            assert_eq!(doc.original, original);
+            assert!(!doc.recovery_root.exists());
+        }
     }
 }
