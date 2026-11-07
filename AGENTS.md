@@ -13,6 +13,10 @@ root `todo.txt` with `python scripts/sync-backlog.py`, then verify with
 `python scripts/sync-backlog.py --check`. Do not edit the generated task list
 independently; synchronization is one way from Markdown to todo.txt. Keep both
 files in the same commit. The generated tasks do not authorize deferred work.
+Each pending checkbox must have an explicit `(A)`-`(Z)` priority followed by
+one concise, bold, actionable title on its first line.
+Split independently finishable work into separate checkboxes. Keep detailed
+requirements in continuation notes; only the titles belong in todo.txt.
 
 The goal is a faithful Windows/Linux Rust port of todotxt.net, not a redesigned
 task manager. Use the checked-out C# and XAML in `reference/todotxt.net` as the

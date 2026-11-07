@@ -18,20 +18,10 @@ def plain_text(text):
 
 def render(markdown):
     tasks = []
-    body = []
-    checked = False
     context = None
     found = 0
-
-    def flush():
-        if body and not checked:
-            text = plain_text(" ".join(body))
-            tasks.append(f"{text} +todotxt.rs {context} source:docs/BACKLOG.md")
-        body.clear()
-
     for line in markdown.splitlines():
         if line.startswith("## "):
-            flush()
             if line == "## Current work: parity and validation":
                 context = "@parity"
             elif line == "## Deferred ideas":
@@ -40,20 +30,21 @@ def render(markdown):
                 context = None
             continue
         match = CHECKBOX.match(line)
-        if match:
-            flush()
-            if context is None:
-                raise ValueError("A backlog item is outside a recognized planning section")
-            found += 1
-            checked = match[1].lower() == "x"
-            body.append(match[2])
-        elif body and line.startswith("  "):
-            body.append(line.strip())
-        elif line.strip():
-            flush()
-    flush()
+        if not match:
+            continue
+        if context is None:
+            raise ValueError("A backlog item is outside a recognized planning section")
+        found += 1
+        if match[1].lower() == "x":
+            continue
+        title = re.match(r"\(([A-Z])\)\s+\*\*(.+?)\*\*(?:\s|$)", match[2])
+        if not title:
+            raise ValueError("Each pending backlog item needs an (A)-(Z) priority and concise bold action title")
+        action = plain_text(title[2]).rstrip(".")
+        tasks.append(f"({title[1]}) {action} +todotxt.rs {context}")
     if not found:
         raise ValueError("No backlog checkboxes found; refusing to generate a task list")
+    tasks.sort(key=lambda task: task[1])  # Stable within each priority.
     return "".join(task + "\n" for task in tasks)
 
 

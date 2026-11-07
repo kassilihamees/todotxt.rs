@@ -1,20 +1,38 @@
-Implement Shift+9 priority-prefilled task creation. Match the original shortcut and priority suggestions in the native and portable frontends. +todotxt.rs @parity source:docs/BACKLOG.md
-Finish portable font selection. Add font-family and font-weight selection to the portable frontend, preserving the shared preference format. +todotxt.rs @parity source:docs/BACKLOG.md
-Implement Linux tray and global shortcut integration. Validate minimize/restore, close-to-tray, Exit, shortcut ownership, and desktop support. +todotxt.rs @parity source:docs/BACKLOG.md
-Validate the Linux desktop application. Run it on real Linux desktops and compare task editing, dialogs, resizing, shortcuts, and file safety. Hosted builds and headless GUI tests do not establish desktop runtime parity. +todotxt.rs @parity source:docs/BACKLOG.md
-Compare visual and interaction parity on both platforms. Review native Windows controls and portable Linux behavior against the original, including wrapping, spacing, selection and dialogs. Respect the accepted printing and donation differences; do not reopen embedded print-preview work. +todotxt.rs @parity source:docs/BACKLOG.md
-Implement the optional upstream version notification. Check advertised versions and provide a website link; this is not an automatic update installer. +todotxt.rs @parity source:docs/BACKLOG.md
-Match locale-aware ordering on Linux. Review the current deterministic ordering against the original's culture-sensitive comparison. +todotxt.rs @parity source:docs/BACKLOG.md
-Validate mounted-file saving on the affected setup. Use fictional fixtures to verify direct writing, recovery, external-change refusal and idle refresh with rclone, including eventual remote uploads. Preserve the unresolved status until affected-machine results confirm the fix. +todotxt.rs @parity source:docs/BACKLOG.md
-Validate Windows tray recovery after Explorer restarts. Confirm that the notification icon and restore/Exit actions recover correctly. +todotxt.rs @parity source:docs/BACKLOG.md
-Ctrl+D for Copy Task to New Task. Check for shortcut conflicts before implementation. Make Ctrl+D the default shortcut displayed for this command, while keeping Ctrl+Shift+C usable as an alias. Neither frontend currently binds Ctrl+D; check again when implementing. Deferred; do not implement now. +todotxt.rs @deferred source:docs/BACKLOG.md
-Command-line task operations. Make the application usable without a GUI through simple commands to add, list, complete, and otherwise manage tasks. Reuse task semantics and file protections across CLI and desktop. Command syntax remains to be designed. +todotxt.rs @deferred source:docs/BACKLOG.md
-Recurring tasks. Recognize recurring-task metadata and handle the next occurrence when completing a task. Decide and document compatible recurrence syntax, due/threshold date handling, and recurrence behavior before building it; preserve the plain todo.txt format. +todotxt.rs @deferred source:docs/BACKLOG.md
-Promote dated tasks Create a subsystem, where the tasks with threshold date have no-priority, but that will grow over time with approaching deadline towards A. The tasks that are overdue are always A. +todotxt.rs @deferred source:docs/BACKLOG.md
-Quick ad hoc filter. Add a separate Filter... command to the Filter menu, opening a simple text input instead of the preset-definition dialog. Apply the entered text as the active filter and retain it until it is changed, cleared, or replaced by another filter/preset. Keep it separate from editing saved preset definitions; decide restart persistence when implementing. +todotxt.rs @deferred source:docs/BACKLOG.md
-OR filters and clear documentation. Allow one filter to include tasks from either of two projects, alongside existing AND and exclusion conditions. For example, the intended query is (project A OR project B) AND incomplete; this is a requirement example, not supported syntax. Current implementation only ANDs nonempty filter lines and treats ordinary conditions as literal substrings. Two project lines require both projects; OR, |, and regex alternatives do not currently express a union. Choose clear syntax and explain combinations with AND, exclusions, and presets. +todotxt.rs @deferred source:docs/BACKLOG.md
-Reconcile externally changed files without losing local work. Improve protections on reload and save using the last loaded state, current on-disk state, and local changes/drafts. Consider diffs, lightweight version history, or Git-backed recovery as design options, rather than assuming Git must be installed. Preserve recoverable versions before reconciliation. Combine unambiguous additions/edits automatically, including tasks added in this instance while the file changed elsewhere. Account for edits, completion, deletion, ordering, and duplicate task lines; avoid identifying tasks solely by stale line numbers or identical text. When changes conflict without a clear solution, show a simple resolution dialog with both versions and explicit choices. Recheck disk state before committing a merged result. Current behavior remains write refusal plus retained drafts and explicit reload; automatic merging and conflict resolution are not implemented. +todotxt.rs @deferred source:docs/BACKLOG.md
-Prompt disk-change detection with a reliable fallback. Aim for nearly instant reload when safe, while preserving active drafts and edits. Consider filesystem notifications with polling/rechecks where needed. Files may live in cloud storage or rclone-mounted directories, where timely notifications and fresh reads cannot be assumed. Reconciliation and write-time checks must still protect data when changes arrive late or events are missed. +todotxt.rs @deferred source:docs/BACKLOG.md
-Mobile companion, Android first. Complement Windows and Linux with an Android app using compatible todo.txt behavior and shared Rust logic where practical. Consider mobile file access, cloud/offline use, and the same conflict protections. An iOS companion is conditional on finding a maintainer. +todotxt.rs @deferred source:docs/BACKLOG.md
-Reorganize the README for readability. Keep the GitHub front page short and easy to scan, with a clear introduction, download/run instructions, and essential current limitations. Move detailed usage, build, recovery and development material into focused documents and link them clearly. Preserve useful information while reducing duplication. Record now; do not reorganize yet. +todotxt.rs @deferred source:docs/BACKLOG.md
-Evaluate support for multiple todo.txt files. First check whether this is actually a good idea for a deliberately simple application and which real use cases justify it. Compare easy file switching with simultaneous lists or combined views; consider per-file filters/preferences, archive destinations, recovery and external-change handling. Decide the scope only after evaluating the added complexity. This is an idea to assess, not an approved implementation. +todotxt.rs @deferred source:docs/BACKLOG.md
+(A) Test the app on real Linux desktops +todotxt.rs @parity
+(A) Test direct saves and recovery on the affected rclone mount +todotxt.rs @parity
+(A) Test external-change safeguards on the affected rclone mount +todotxt.rs @parity
+(A) Verify task-file contents after rclone uploads +todotxt.rs @parity
+(B) Add Shift+9 task creation to the Windows UI +todotxt.rs @parity
+(B) Add Shift+9 task creation to the portable UI +todotxt.rs @parity
+(B) Add font-family selection to the portable UI +todotxt.rs @parity
+(B) Add font-weight selection to the portable UI +todotxt.rs @parity
+(B) Add Linux system-tray support +todotxt.rs @parity
+(B) Add Linux global-shortcut support +todotxt.rs @parity
+(B) Compare the Windows UI with todotxt.net +todotxt.rs @parity
+(B) Compare the Linux UI with todotxt.net +todotxt.rs @parity
+(B) Match Linux task sorting to the user's locale +todotxt.rs @parity
+(B) Test tray recovery after restarting Explorer +todotxt.rs @parity
+(C) Add the optional new-version notification +todotxt.rs @parity
+(C) Make Ctrl+D duplicate a task +todotxt.rs @deferred
+(C) Design the task-management command-line interface +todotxt.rs @deferred
+(C) Add a command to list tasks +todotxt.rs @deferred
+(C) Add a command to create a task +todotxt.rs @deferred
+(C) Add a command to complete a task +todotxt.rs @deferred
+(C) Define recurring-task rules and metadata +todotxt.rs @deferred
+(C) Create the next recurring task when completing an occurrence +todotxt.rs @deferred
+(C) Add a quick text filter to the Filter menu +todotxt.rs @deferred
+(C) Design syntax for combining AND and OR filters +todotxt.rs @deferred
+(C) Implement OR matching in task filters +todotxt.rs @deferred
+(C) Document the combined filter syntax +todotxt.rs @deferred
+(C) Retain the versions needed to merge external edits +todotxt.rs @deferred
+(C) Merge unambiguous external and local task changes +todotxt.rs @deferred
+(C) Add a dialog for resolving conflicting task edits +todotxt.rs @deferred
+(C) Recheck the file before saving a merged task list +todotxt.rs @deferred
+(C) Watch local task files for changes +todotxt.rs @deferred
+(C) Add reliable change detection for cloud-mounted task files +todotxt.rs @deferred
+(C) Move detailed usage and recovery help into focused guides +todotxt.rs @deferred
+(C) Move build and development instructions into focused guides +todotxt.rs @deferred
+(C) Shorten the README and link the detailed guides +todotxt.rs @deferred
+(D) Raise dated-task priorities as deadlines approach +todotxt.rs @deferred
+(D) Build an Android companion app +todotxt.rs @deferred
+(D) Evaluate whether supporting multiple todo.txt files is worthwhile +todotxt.rs @deferred

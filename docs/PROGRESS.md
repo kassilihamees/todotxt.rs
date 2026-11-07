@@ -443,3 +443,21 @@ omission, grouping and stale-output detection passed using temporary fictional
 examples. The generated list contains 20 pending project items. Formatting,
 40 task/file tests and strict all-target Clippy pass. This is planning and
 maintenance tooling only; no requested future application feature was implemented.
+
+## 2026-11-08: actionable project tasks
+
+Reworded the project checklist as concise actions and split bundled work into
+independently finishable tasks. Detailed requirements remain in BACKLOG.md.
+The generator now exports only bold task titles with project/context tags,
+without paragraph notes or repeated source metadata. Updated the maintenance
+rules so future regeneration preserves the shorter style. No app features changed.
+
+At the maintainer's request, assigned explicit todo.txt priorities in the source
+checkboxes: A for file-safety/reliability validation, B for remaining parity,
+C for practical improvements/optional features, and D for exploratory or larger
+ideas. The generator preserves the priority prefix; deferred scope still applies.
+
+Validation: generated 38 short actions, stably ordered by priority. Verified
+priority prefixes, title-only export, CRLF input, omitted completed tasks and
+rejection of malformed titles. Synchronization, formatting, 40 task/file tests
+and strict all-target Clippy pass. All detailed constraints remain in Markdown.
