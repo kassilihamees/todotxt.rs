@@ -461,3 +461,37 @@ Validation: generated 38 short actions, stably ordered by priority. Verified
 priority prefixes, title-only export, CRLF input, omitted completed tasks and
 rejection of malformed titles. Synchronization, formatting, 40 task/file tests
 and strict all-target Clippy pass. All detailed constraints remain in Markdown.
+
+## 2026-11-08: workspace housekeeping
+
+Audited generated artifacts, active processes and reparse points before cleanup.
+The workspace accumulated duplicate build trees, historical preview profiles,
+old release bundles/probes, a downloaded PowerShell runtime, obsolete Git reset
+clones/helpers and fetched diagnostic sources. Retain the current executable
+at target/release/todotxt-rs.exe and the pristine upstream source; remove the
+rebuildable and obsolete workspace artifacts. Real-app data/recovery outside the
+workspace and the separately running application remain untouched.
+
+Smoke profiles and screenshots now use unique system temporary directories.
+Successful runs remove their own directory after the test process exits;
+failures or -KeepArtifacts retain diagnostics and print the location. Direct
+screenshot capture also defaults to temporary storage. Cleanup validates its
+resolved directory and rejects reparse points. Added permanent housekeeping
+rules to prevent repeated workspace artifact accumulation.
+
+Validation before removing caches: backlog synchronization, formatting,
+40 task/file tests and strict Clippy passed. A PowerShell 7 smoke run passed and
+removed its temporary profile/screenshot. The maintainer found the visible test
+windows disruptive during housekeeping; the working rules now exclude GUI
+smoke from housekeeping/documentation-only tasks. No more GUI checks are run
+for this cleanup. Settings-path checks confirmed the live task/archive are not
+inside the disposable workspace folders; no task contents were inspected.
+
+Cleanup result: removed approximately 7.72 GiB of generated file contents
+(about 7.1 GiB of additional free disk space), including 320 redundant executable
+copies. Deleted .local, browser logs, Python bytecode, obsolete preview/release
+artifacts and all build outputs except the current release EXE. A small debug
+cache remainder caused by concurrent file activity was rechecked and removed
+without stopping the IDE. The workspace now has exactly one executable, whose
+SHA-256 is unchanged. Upstream reference checkout and tracked source files are
+intact. Build caches will be recreated normally when development next needs them.

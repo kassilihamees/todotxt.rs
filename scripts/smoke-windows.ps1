@@ -1,4 +1,4 @@
-param([string]$Binary = 'target/debug/todotxt-rs.exe', [switch]$PhysicalHotkey, [switch]$PhysicalShortcuts)
+param([string]$Binary = 'target/debug/todotxt-rs.exe', [switch]$PhysicalHotkey, [switch]$PhysicalShortcuts, [switch]$KeepArtifacts)
 $ErrorActionPreference = 'Stop'
 # Exercise real Win32 controls against an isolated copy of the sample.
 Add-Type @'
@@ -178,7 +178,27 @@ function Total-RowHeight([IntPtr]$list) {
     for ($n = 0; $n -lt $count; $n++) { $height += [TodoPreview]::SendMessage($list, 0x1A1, [IntPtr]$n, [IntPtr]::Zero).ToInt32() }
     $height
 }
-$previewProfileDirectory = Join-Path $PWD ('.local/preview-' + [Guid]::NewGuid().ToString('N'))
+function Remove-SmokeProfile([string]$directory) {
+    $temporaryRoot = (Resolve-Path -LiteralPath ([IO.Path]::GetTempPath())).ProviderPath.TrimEnd('\')
+    $resolved = (Resolve-Path -LiteralPath $directory).ProviderPath
+    if (!$resolved.StartsWith($temporaryRoot + '\', [StringComparison]::OrdinalIgnoreCase) -or
+        [IO.Path]::GetFileName($resolved) -notmatch '^todotxt-rs-smoke-[0-9a-f]{32}$') {
+        throw 'Refusing cleanup outside the isolated smoke-test directory.'
+    }
+    $pending = [Collections.Generic.Stack[IO.DirectoryInfo]]::new()
+    $pending.Push((Get-Item -LiteralPath $resolved))
+    while ($pending.Count) {
+        $entry = $pending.Pop()
+        if ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Refusing cleanup through a reparse point.' }
+        foreach ($child in Get-ChildItem -LiteralPath $entry.FullName -Force) {
+            if ($child.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Refusing cleanup through a reparse point.' }
+            if ($child.PSIsContainer) { $pending.Push($child) }
+        }
+    }
+    Remove-Item -LiteralPath $resolved -Recurse -Force
+}
+$previewProfileDirectory = Join-Path ([IO.Path]::GetTempPath()) ('todotxt-rs-smoke-' + [Guid]::NewGuid().ToString('N'))
+$smokeSucceeded = $false
 $process = Start-Process -FilePath ([IO.Path]::GetFullPath($Binary)) -ArgumentList '--demo', '--config-dir', ('"' + $previewProfileDirectory + '"') -WindowStyle Hidden -PassThru
 try {
     $deadline = [DateTime]::UtcNow.AddSeconds(15)
@@ -187,7 +207,7 @@ try {
     # Show the interactive application preview so the native renderer can repaint.
     [void][TodoPreview]::ShowWindow($root, 5)
     Start-Sleep -Seconds 2
-    & "$PSScriptRoot/capture-window.ps1" -ProcessId $process.Id -OutputPath 'docs/screenshots/rust.png'
+    & "$PSScriptRoot/capture-window.ps1" -ProcessId $process.Id -OutputPath (Join-Path $previewProfileDirectory 'preview.png')
     $editor = [TodoPreview]::GetDlgItem($root, 10)
     $list = [TodoPreview]::GetDlgItem($root, 11)
     $status = [TodoPreview]::GetDlgItem($root, 13)
@@ -529,6 +549,7 @@ try {
     [void][TodoPreview]::PostMessage($root, 0x100, [IntPtr]13, [IntPtr]::Zero)
     Await-Condition { $process.HasExited } 'Tray Exit did not quit with minimize-on-close enabled.'
     Write-Output 'PASS: native controls, width/height reflow, maximize/minimize/restore, Enter/save, completion, dialog Enter, Options/font dialog, filter suggestions, printer cancellation, tray minimize/restore/close, hotkey routing, tray right-click/Exit, calendar, debug logging, forced Exit, external-change refusal/draft preservation, and screenshot.'
+    $smokeSucceeded = $true
 }
 catch {
     Write-Output ("SMOKE FAILED: " + $_.Exception.Message)
@@ -547,6 +568,12 @@ finally {
             Start-Sleep -Milliseconds 200
         }
         [void][TodoPreview]::PostMessage([TodoPreview]::FindRoot($process.Id), 0x111, [IntPtr]133, [IntPtr]::Zero)
-        if (!$process.WaitForExit(5000)) { Write-Warning 'Isolated preview could not exit through File Exit; stopping this test process.'; $process.Kill() }
+        if (!$process.WaitForExit(5000)) { Write-Warning 'Isolated preview could not exit through File Exit; stopping this test process.'; $process.Kill(); [void]$process.WaitForExit(5000) }
+    }
+    if ($smokeSucceeded -and !$KeepArtifacts -and $process.HasExited) {
+        Remove-SmokeProfile $previewProfileDirectory
+        Write-Output 'Removed the successful smoke profile and screenshot.'
+    } else {
+        Write-Output ('Smoke artifacts retained in ' + $previewProfileDirectory)
     }
 }

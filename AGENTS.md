@@ -50,3 +50,22 @@ chase its exact paper layout as parity work. Donations are also closed: do not
 add a donation menu or donation infrastructure. These are accepted differences,
 not remaining gaps. The upstream updater is only an optional version check and
 website link, not an automatic installer; describe it accurately.
+
+## Workspace housekeeping
+
+Use Cargo's standard target directory for builds. Avoid parallel target trees,
+versioned executable copies, release archives, tool downloads and historical
+preview profiles in the workspace unless specifically needed for the task.
+Use system temporary directories for scratch work and isolated GUI profiles;
+remove successful test artifacts. The smoke script retains failures for diagnosis
+and supports -KeepArtifacts when a screenshot is explicitly needed.
+Keep upstream reference source, Git metadata, project sources and documents.
+Inspect ignored files before cleanup; never remove live task files or real-app
+recovery storage. Check resolved paths and refuse traversal through reparse points
+before recursive deletion. A housekeeping pass may retain the current executable
+at target/release/todotxt-rs.exe while removing rebuildable caches and older copies.
+
+Do not launch GUI smoke tests for housekeeping or documentation-only changes.
+When a task needs interactive UI validation, explain which windows/dialogs will
+open before starting. Never launch or interrupt the user's installed app for
+such checks; use only the isolated fictional test profile.

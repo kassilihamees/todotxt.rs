@@ -1,4 +1,4 @@
-param([string]$ProcessName = 'todotxt', [int]$ProcessId = 0, [string]$OutputPath = 'docs/screenshots/upstream.png')
+param([string]$ProcessName = 'todotxt', [int]$ProcessId = 0, [string]$OutputPath = '')
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 Add-Type @'
@@ -20,6 +20,9 @@ $dc = $graphics.GetHdc()
 try { $captured = [WindowCapture]::PrintWindow($process.MainWindowHandle, $dc, 2) }
 finally { $graphics.ReleaseHdc($dc) }
 if (!$captured) { throw 'PrintWindow failed' }
+if ([string]::IsNullOrWhiteSpace($OutputPath)) {
+    $OutputPath = Join-Path ([IO.Path]::GetTempPath()) ('todotxt-rs-capture-' + [Guid]::NewGuid().ToString('N') + '.png')
+}
 $absolute = [IO.Path]::GetFullPath($OutputPath)
 [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($absolute))
 $bitmap.Save($absolute, [System.Drawing.Imaging.ImageFormat]::Png)
