@@ -22,13 +22,24 @@ These are the remaining items described in [PARITY.md](PARITY.md). Each checkbox
 has one independently finishable action; keep its bold title short. Put detailed
 requirements in the notes below it.
 
-- [ ] (B) **Add Shift+9 task creation to the Windows UI.**
+- [x] (B) **Add Shift+9 task creation to the Windows UI.**
   Start a task with a priority prefix and show priority suggestions, matching
   the original shortcut.
 
-- [ ] (B) **Add Shift+9 task creation to the portable UI.**
+- [x] (B) **Add Shift+9 task creation to the portable UI.**
   Match the same priority-prefix and suggestion behavior in the portable
   frontend.
+
+- [x] (B) **Fix clipped Windows task suggestions.**
+  Clip sibling painting and size the dropdown from real row metrics, including
+  its border. Show all initial project/context/priority rows without navigation.
+
+- [x] (B) **Use a calendar picker in Windows date dialogs.**
+  Restore calendar selection and T/Up/Down shortcuts for due and threshold dates.
+
+- [ ] (B) **Add calendar selection to portable date dialogs.**
+  The original uses a date picker. The Windows frontend now has a native one;
+  portable date dialogs still use text input and need calendar selection.
 
 - [ ] (B) **Add font-family selection to the portable UI.**
   Preserve compatibility with the shared font preferences and native frontend.
@@ -66,12 +77,13 @@ requirements in the notes below it.
   comparisons.
 
 - [ ] (A) **Test direct saves and recovery on the affected rclone mount.**
-  Use fictional fixtures to verify saved contents and local previous/intended
-  recovery copies. Preserve the unresolved status until affected-machine
-  results confirm the fix.
+  The maintainer considers the file issue resolved for now (2026-11-10).
+  Keep this as additional validation, not an active investigation. Use fictional
+  fixtures to verify saved contents and local previous/intended recovery copies.
 
 - [ ] (A) **Test external-change safeguards on the affected rclone mount.**
-  Verify refusal of conflicting writes and safe idle refresh without
+  Additional validation after the maintainer reported the issue resolved for
+  now: verify refusal of conflicting writes and safe idle refresh without
   repeatedly postponing uploads.
 
 - [ ] (A) **Verify task-file contents after rclone uploads.**

@@ -309,6 +309,10 @@ try {
         Stroke 0x58
         Await-Condition { (Smoke-Line) -match '^x ' } 'Physical X did not complete after sorting.'
         Stroke 0x54 $true
+        Stroke 0x39 $false $false $true
+        Await-Condition { [TodoPreview]::ControlText($editor).StartsWith('(') -and [TodoPreview]::IsWindowVisible([TodoPreview]::GetDlgItem($root, 12)) } 'Physical Shift+9 did not start priority suggestions.'
+        Stroke 0x1B
+        Stroke 0x1B
         Write-Output 'PASS: OS keyboard delivery for X, Alt priority arrows, Ctrl threshold arrows, Ctrl+Alt due arrows, Ctrl+Shift+C, Ctrl+0..7/keypad sorts, Ctrl+T, Right Shift calendar, F5, F10, and editor Escape.'
     }
     [void][TodoPreview]::PostMessage($root, 0x111, [IntPtr]105, [IntPtr]::Zero)
@@ -317,6 +321,47 @@ try {
     [void][TodoPreview]::SendMessage($input, 0xC, [IntPtr]::Zero, 'native-dialog-enter')
     [void][TodoPreview]::PostMessage($input, 0x100, [IntPtr]13, [IntPtr]::Zero)
     Await-Condition { [IO.File]::ReadAllText($todo).Contains('native-dialog-enter') } 'Enter did not accept the native task dialog.'
+    # Keep the selected task visible while assigning a future threshold.
+    [void][TodoPreview]::SendMessage($root, 0x111, [IntPtr]131, [IntPtr]::Zero)
+    # Both date commands must expose a native editable calendar picker.
+    foreach ($dateCommand in @(121, 122)) {
+        [void][TodoPreview]::PostMessage($root, 0x111, [IntPtr]$dateCommand, [IntPtr]::Zero)
+        Await-Condition { (Control-Class ([TodoPreview]::GetDlgItem([TodoPreview]::GetWindow($root, 6), 101))) -eq 'SysDateTimePick32' } 'Expected native date/calendar picker.'
+        $dateDialog = [TodoPreview]::GetWindow($root, 6)
+        $datePicker = [TodoPreview]::GetDlgItem($dateDialog, 101)
+        [void][TodoPreview]::PostMessage($datePicker, 0x100, [IntPtr]0x54, [IntPtr]::Zero)
+        Start-Sleep -Milliseconds 100
+        [void][TodoPreview]::PostMessage($datePicker, 0x100, [IntPtr]0x26, [IntPtr]::Zero)
+        [void][TodoPreview]::PostMessage($datePicker, 0x100, [IntPtr]13, [IntPtr]::Zero)
+        $dateTag = if ($dateCommand -eq 121) { 'due:' } else { 't:' }
+        $expectedDate = $dateTag + (Get-Date).AddDays(1).ToString('yyyy-MM-dd')
+        Await-Condition { [IO.File]::ReadAllText($todo).Contains($expectedDate) } 'Date picker today/next-day/Enter did not save.'
+        [void][TodoPreview]::PostMessage($root, 0x111, [IntPtr]$dateCommand, [IntPtr]::Zero)
+        Await-Condition { (Control-Class ([TodoPreview]::GetDlgItem([TodoPreview]::GetWindow($root, 6), 101))) -eq 'SysDateTimePick32' } 'Date picker did not reopen.'
+        $dateDialog = [TodoPreview]::GetWindow($root, 6)
+        $datePicker = [TodoPreview]::GetDlgItem($dateDialog, 101)
+        [void][TodoPreview]::PostMessage($datePicker, 0x100, [IntPtr]0x73, [IntPtr]::Zero) # F4 opens calendar
+        Await-Condition { [TodoPreview]::SendMessage($datePicker, 0x1008, [IntPtr]::Zero, [IntPtr]::Zero) -ne [IntPtr]::Zero } 'Calendar dropdown did not open.'
+        [void][TodoPreview]::PostMessage($datePicker, 0x100, [IntPtr]27, [IntPtr]::Zero)
+        Await-Condition { [TodoPreview]::SendMessage($datePicker, 0x1008, [IntPtr]::Zero, [IntPtr]::Zero) -eq [IntPtr]::Zero } 'Escape did not dismiss the calendar.'
+        [void][TodoPreview]::PostMessage($dateDialog, 0x111, [IntPtr]2, [IntPtr]::Zero)
+        Await-Condition { ![TodoPreview]::IsWindow($dateDialog) } 'Date dialog Cancel did not close.'
+    }
+    [void][TodoPreview]::SendMessage($root, 0x111, [IntPtr]127, [IntPtr]::Zero)
+    [void][TodoPreview]::SendMessage($root, 0x111, [IntPtr]130, [IntPtr]::Zero)
+    [void][TodoPreview]::SendMessage($root, 0x111, [IntPtr]131, [IntPtr]::Zero)
+    # Project suggestions must fit whole rows immediately, before navigation.
+    [void][TodoPreview]::SendMessage($root, 0x111, [IntPtr]102, [IntPtr]::Zero)
+    [TodoPreview]::TypeText($editor, '+')
+    $taskSuggestions = [TodoPreview]::GetDlgItem($root, 12)
+    Await-Condition { [TodoPreview]::IsWindowVisible($taskSuggestions) } 'Project suggestions did not open.'
+    $suggestionCount = [TodoPreview]::SendMessage($taskSuggestions, 0x18B, [IntPtr]::Zero, [IntPtr]::Zero).ToInt32()
+    $suggestionHeight = [TodoPreview]::SendMessage($taskSuggestions, 0x1A1, [IntPtr]::Zero, [IntPtr]::Zero).ToInt32()
+    if ($suggestionCount -lt 2 -or [TodoPreview]::Height($taskSuggestions) -lt ([Math]::Min(8, $suggestionCount) * $suggestionHeight)) { throw 'Suggestion dropdown clips its rows.' }
+    if ($KeepArtifacts) { & "$PSScriptRoot/capture-window.ps1" -ProcessId $process.Id -OutputPath (Join-Path $previewProfileDirectory 'suggestions.png') }
+    [void][TodoPreview]::PostMessage($editor, 0x100, [IntPtr]27, [IntPtr]::Zero)
+    [void][TodoPreview]::PostMessage($editor, 0x100, [IntPtr]27, [IntPtr]::Zero)
+    Write-Output 'PASS: native date picker, calendar dropdown, date shortcuts, and whole project suggestion rows.'
     # Open the real owned Options window and check its edit/checkbox controls.
     [void][TodoPreview]::PostMessage($root, 0x111, [IntPtr]110, [IntPtr]::Zero)
     Await-Condition { [TodoPreview]::GetDlgItem([TodoPreview]::GetWindow($root, 6), 200) -ne [IntPtr]::Zero } 'Options controls did not appear.'

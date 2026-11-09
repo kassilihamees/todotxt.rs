@@ -510,3 +510,40 @@ Validation: both launcher copies resolve the intended EXE, project todo.txt and
 separate config through --dry-run; initial settings JSON parses and disables
 tray/hotkey and auto-archive. Source/deployed copies match. No application was
 launched, normal settings were not written, and build caches were not recreated.
+
+## 2026-11-10: suggestions, priority creation and native date picker
+
+Fixed the clipped Windows task suggestion dropdown: overlapping native siblings
+now clip each other's painting, and both task/filter dropdowns use actual row
+heights plus their border. Explicitly repaint the task popup when shown. An
+isolated capture shows all four fictional project suggestions fully visible
+before keyboard navigation.
+
+Implemented upstream Shift+9 priority-prefilled task creation in both frontends.
+Retain positive filter text after the opening prefix, put the caret after `(`,
+and show priority suggestions. Editor-focused typing keeps its normal behavior.
+The portable keyboard regression also checks filter preservation, caret position,
+suggestion acceptance and that opening/accepting suggestions alone does not save.
+
+Compared upstream SetDueDateDialog and replaced Windows due/threshold text
+prompts with native date/time pickers and calendar dropdowns. T selects today;
+Up/Down moves one day while the calendar is closed. Calendar navigation remains
+native, Enter accepts and Escape cancels. Portable calendar selection is now an
+explicit parity item; its existing date text entry remains available.
+
+The maintainer considers the file save/refresh issue resolved for now. Recorded
+that status while retaining further affected-mount safety/upload checks as
+validation work. Deferred feature ideas remain deferred; regenerated todo.txt.
+
+Validation: formatting, 41 native tests, 50 tests with portable-ui enabled, strict
+Clippy in both configurations, backlog synchronization and whitespace checks
+pass. The isolated Windows smoke run passes physical Shift+9, date/calendar
+selection and shortcuts, full suggestion row sizing, and its existing native
+file/dialog/tray/shortcut checks. Its first run exposed test-state interference:
+a future threshold hid the fictional task before later completion checks. The
+test now restores date/filter state between checks; the full rerun passes.
+Linux desktop runtime remains unvalidated.
+
+The native debug build is ready. The release build could not
+replace target/release/todotxt-rs.exe because the maintainer's project instance
+is running. It was not stopped; the separately installed main app was untouched.

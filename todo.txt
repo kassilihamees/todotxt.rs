@@ -2,8 +2,7 @@
 (A) Test direct saves and recovery on the affected rclone mount +todotxt.rs @parity
 (A) Test external-change safeguards on the affected rclone mount +todotxt.rs @parity
 (A) Verify task-file contents after rclone uploads +todotxt.rs @parity
-(B) Add Shift+9 task creation to the Windows UI +todotxt.rs @parity
-(B) Add Shift+9 task creation to the portable UI +todotxt.rs @parity
+(B) Add calendar selection to portable date dialogs +todotxt.rs @parity
 (B) Add font-family selection to the portable UI +todotxt.rs @parity
 (B) Add font-weight selection to the portable UI +todotxt.rs @parity
 (B) Add Linux system-tray support +todotxt.rs @parity

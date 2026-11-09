@@ -33,11 +33,15 @@ Ctrl+S threshold; Alt arrows priority; Ctrl arrows threshold; Ctrl+Alt arrows du
 
 ## Validation and remaining gaps
 
-### Current assessment (2026-10-09)
+### Current assessment (2026-11-10)
 
 Core task/file functionality is implemented and covered by regression tests;
 full application parity has not been achieved. A percentage would imply a
 complete feature audit and validation that we do not yet have.
+
+The maintainer considers the file save/refresh issue resolved for now as of
+2026-11-10; further mount checks remain validation work, not an active blocker.
+The following records the earlier failures and safeguards.
 
 v0.1.0 has a reported Windows rclone mounted-save data-loss issue and is marked
 with a critical warning. v0.1.1 closes staged writers before replacement,
@@ -134,9 +138,9 @@ caching and edits preserving size/mtime can delay idle detection; these checks
 are not a remote upload guarantee. The mounted-save corruption report remains
 unresolved, independent of the idle polling change.
 
-The shortcut source audit also found an existing gap: upstream Shift+9 begins a
-new task with a priority prefix and suggestions. That shortcut is not yet
-implemented in either frontend. Editor-focused list shortcuts intentionally
+Shift+9 now begins a new task with a priority prefix and suggestions in both
+frontends. Positive filter text is preserved after the prefix, with the caret
+after the opening parenthesis, matching upstream. Editor-focused list shortcuts
 remain native text editing, as documented in Help.
 
 ## Configurable save method
@@ -161,3 +165,17 @@ selection now additionally compares canonical paths and available filesystem
 identities (128-bit Windows file IDs, Unix device/inode). Unsupported mounted
 metadata is optional. Both save methods reject short-path and hard-link aliases
 before creating recovery copies or changing archive/source contents.
+
+## Suggestion and date-dialog parity (2026-11-10)
+
+Windows suggestion lists clip sibling painting so the task list cannot paint
+through the dropdown. Dropdown height uses the actual font's row metrics plus
+its border, rather than a fixed row estimate. The same sizing applies to filter
+suggestions.
+
+Upstream SetDueDateDialog uses a WPF DatePicker, not a plain text prompt.
+Windows due/threshold dialogs now use the native date/time picker with a calendar
+dropdown, ISO date display, T for today and Up/Down for one-day changes when the
+calendar is closed. Enter accepts and Escape cancels; the open calendar keeps
+its native navigation. Portable date dialogs still use text input; calendar
+selection there is explicitly outstanding.

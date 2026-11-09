@@ -29,6 +29,7 @@ enum Action {
     Open,
     NewFile,
     NewTask,
+    NewPriorityTask,
     Edit,
     Duplicate,
     Delete,
@@ -370,6 +371,31 @@ impl Desktop {
                     }
                 }
             }
+            Action::NewPriorityTask => {
+                self.action(Action::NewTask, ctx);
+                self.editor = if self.editor.is_empty() {
+                    "(".into()
+                } else {
+                    format!("( {}", self.editor)
+                };
+                self.completion_dismissed = false;
+                self.completion_index = 0;
+                let id = egui::Id::new("task_editor");
+                let mut state = egui::TextEdit::load_state(ctx, id).unwrap_or_default();
+                state
+                    .cursor
+                    .set_char_range(Some(egui::text::CCursorRange::one(
+                        egui::text::CCursor::new(1),
+                    )));
+                state.store(ctx, id);
+                ctx.memory_mut(|m| m.request_focus(id));
+                self.focus_editor = false;
+                // The triggering character must not be inserted again by TextEdit.
+                ctx.input_mut(|i| {
+                    i.events
+                        .retain(|e| !matches!(e, egui::Event::Text(t) if t == "("))
+                });
+            }
             Action::NewTask => {
                 self.editing = None;
                 self.editor = self
@@ -625,7 +651,9 @@ impl Desktop {
                 continue;
             };
             let ctrl = m.ctrl || m.command;
-            let action = if key == Key::F5 {
+            let action = if !editing && !ctrl && !m.alt && m.shift && key == Key::Num9 {
+                Some(Action::NewPriorityTask)
+            } else if key == Key::F5 {
                 Some(Action::Reload)
             } else if key == Key::F10 {
                 Some(Action::Options)
@@ -1879,6 +1907,35 @@ mod gui_tests {
         assert_eq!(h.file(), "first +test\nsecond @home\n");
         assert!(h.app.editor.is_empty());
         assert!(h.app.error.is_none());
+    }
+
+    #[test]
+    fn shift_nine_creates_priority_draft_preserving_filter_and_caret() {
+        let mut h = Harness::new();
+        h.app.settings.filter = "+test".into();
+        let original = h.file();
+        h.frame(vec![
+            egui::Event::Key {
+                key: Key::Num9,
+                physical_key: Some(Key::Num9),
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::SHIFT,
+            },
+            egui::Event::Text("(".into()),
+        ]);
+        h.frame(vec![]);
+        assert_eq!(h.app.editor, "( +test");
+        let state = egui::TextEdit::load_state(&h.ctx, egui::Id::new("task_editor")).unwrap();
+        assert_eq!(state.cursor.char_range().unwrap().primary.index, 1);
+        assert!(!h.app.completion_dismissed);
+        h.key(Key::Space);
+        assert_eq!(h.app.editor, "(A) +test");
+        assert_eq!(h.file(), original);
+        h.key(Key::Escape);
+        h.app.settings.filter.clear();
+        h.app.action(Action::NewPriorityTask, &h.ctx);
+        assert_eq!(h.app.editor, "(");
     }
 
     #[test]

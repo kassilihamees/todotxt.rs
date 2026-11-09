@@ -1,4 +1,5 @@
 use super::*;
+use chrono::{Datelike, NaiveDate};
 use todotxt_rs::{document::SaveMethod, settings::Settings};
 use windows_sys::Win32::UI::Controls::Dialogs::*;
 
@@ -95,6 +96,10 @@ unsafe fn select_file(
 }
 
 enum Kind {
+    Date {
+        title: String,
+        value: NaiveDate,
+    },
     Input {
         title: String,
         label: String,
@@ -129,7 +134,7 @@ impl Dialog {
     unsafe fn build(&mut self) {
         let (width, height) = match &self.kind {
             Kind::Input { readonly: true, .. } => (500, 450),
-            Kind::Input { .. } => (390, 160),
+            Kind::Input { .. } | Kind::Date { .. } => (390, 160),
             Kind::Filters { .. } => (405, 600),
             Kind::Options(_) => (510, 660),
         };
@@ -145,6 +150,7 @@ impl Dialog {
             SWP_NOZORDER,
         );
         let label = match &self.kind {
+            Kind::Date { .. } => "Set date to (T: today; Up/Down: +/-1 day):".into(),
             Kind::Input { label, .. } => label.clone(),
             Kind::Filters { .. } => {
                 "One AND condition per line; 0 clears, 1–9 apply presets.".into()
@@ -152,7 +158,7 @@ impl Dialog {
             Kind::Options(_) => "Archive File".into(),
         };
         let title = match &self.kind {
-            Kind::Input { title, .. } => title.clone(),
+            Kind::Input { title, .. } | Kind::Date { title, .. } => title.clone(),
             Kind::Filters { .. } => "Filter".into(),
             Kind::Options(_) => "Options".into(),
         };
@@ -160,6 +166,26 @@ impl Dialog {
         let label_hwnd = child(self.hwnd, w!("STATIC"), &label, 0, 100, self.font);
         self.place(label_hwnd, 12, 12, width - 40, 22);
         match &mut self.kind {
+            Kind::Date { value, .. } => {
+                self.edit = child(
+                    self.hwnd,
+                    DATETIMEPICK_CLASSW,
+                    "",
+                    WS_TABSTOP | DTS_SHORTDATEFORMAT,
+                    101,
+                    self.font,
+                );
+                SendMessageW(self.edit, DTM_SETFORMATW, 0, w!("yyyy-MM-dd") as isize);
+                set_picker_date(self.edit, *value);
+                MoveWindow(
+                    self.edit,
+                    scale(self.dpi, 12),
+                    scale(self.dpi, 38),
+                    scale(self.dpi, width - 40),
+                    scale(self.dpi, 24),
+                    1,
+                );
+            }
             Kind::Input { text, readonly, .. } => {
                 self.edit = child(
                     self.hwnd,
@@ -591,7 +617,7 @@ impl Dialog {
             point.x,
             point.y + scale(self.dpi, 20),
             scale(self.dpi, 220),
-            scale(self.dpi, 18) * self.tags.len().min(6) as i32,
+            suggestion_height(self.suggestions, self.tags.len().min(6)),
             SWP_NOACTIVATE | SWP_SHOWWINDOW,
         );
         SendMessageW(self.suggestions, LB_SETCURSEL, 0, 0);
@@ -605,6 +631,28 @@ impl Dialog {
         ShowWindow(self.suggestions, SW_HIDE);
     }
     unsafe fn key(&mut self, msg: &MSG) -> bool {
+        if matches!(self.kind, Kind::Date { .. }) && msg.hwnd == self.edit {
+            if SendMessageW(self.edit, DTM_GETMONTHCAL, 0, 0) != 0 {
+                return false;
+            }
+            let value = if msg.wParam == b'T' as usize {
+                Some(Local::now().date_naive())
+            } else if matches!(msg.wParam as u16, VK_UP | VK_DOWN) {
+                picker_date(self.edit).and_then(|d| {
+                    d.checked_add_signed(Duration::days(if msg.wParam == VK_UP as usize {
+                        1
+                    } else {
+                        -1
+                    }))
+                })
+            } else {
+                None
+            };
+            if let Some(value) = value {
+                set_picker_date(self.edit, value);
+                return true;
+            }
+        }
         if !self.filter_edits.contains(&msg.hwnd) {
             return false;
         }
@@ -630,6 +678,13 @@ impl Dialog {
     unsafe fn accept(&mut self) {
         self.store_filter();
         match &mut self.kind {
+            Kind::Date { value, .. } => {
+                let Some(date) = picker_date(self.edit) else {
+                    error_box(self.hwnd, "Enter a valid date.");
+                    return;
+                };
+                *value = date;
+            }
             Kind::Input { text, .. } => *text = window_text(self.edit),
             Kind::Options(settings) => {
                 let path = window_text(self.edit);
@@ -829,7 +884,12 @@ unsafe fn show(parent: HWND, font: HFONT, dpi: u32, kind: Kind) -> io::Result<Op
         if msg.message == WM_KEYDOWN && state.borrow_mut().key(&msg) {
             continue;
         }
-        if IsDialogMessageW(hwnd, &msg) == 0 {
+        let calendar_open = {
+            let dialog = state.borrow();
+            matches!(dialog.kind, Kind::Date { .. })
+                && SendMessageW(dialog.edit, DTM_GETMONTHCAL, 0, 0) != 0
+        };
+        if calendar_open || IsDialogMessageW(hwnd, &msg) == 0 {
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
@@ -988,4 +1048,52 @@ unsafe extern "system" fn panel_proc(hwnd: HWND, msg: u32, wp: usize, lp: isize)
         }
     }
     DefWindowProcW(hwnd, msg, wp, lp)
+}
+
+unsafe fn set_picker_date(hwnd: HWND, date: NaiveDate) {
+    let value = SYSTEMTIME {
+        wYear: date.year() as u16,
+        wMonth: date.month() as u16,
+        wDay: date.day() as u16,
+        ..zeroed()
+    };
+    SendMessageW(
+        hwnd,
+        DTM_SETSYSTEMTIME,
+        GDT_VALID as usize,
+        &value as *const SYSTEMTIME as isize,
+    );
+}
+unsafe fn picker_date(hwnd: HWND) -> Option<NaiveDate> {
+    let mut value: SYSTEMTIME = zeroed();
+    if SendMessageW(
+        hwnd,
+        DTM_GETSYSTEMTIME,
+        0,
+        &mut value as *mut SYSTEMTIME as isize,
+    ) != GDT_VALID as isize
+    {
+        return None;
+    }
+    NaiveDate::from_ymd_opt(value.wYear as i32, value.wMonth as u32, value.wDay as u32)
+}
+pub(super) unsafe fn date(
+    parent: HWND,
+    font: HFONT,
+    dpi: u32,
+    title: &str,
+    value: NaiveDate,
+) -> io::Result<Option<NaiveDate>> {
+    match show(
+        parent,
+        font,
+        dpi,
+        Kind::Date {
+            title: title.into(),
+            value,
+        },
+    )? {
+        Some(Kind::Date { value, .. }) => Ok(Some(value)),
+        _ => Ok(None),
+    }
 }

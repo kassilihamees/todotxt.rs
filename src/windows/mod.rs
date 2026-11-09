@@ -78,6 +78,7 @@ const LIST_ID: usize = 11;
 const SUGGEST_ID: usize = 12;
 const SORT_BASE: u16 = 300;
 const PRESET_BASE: u16 = 400;
+const NEW_PRIORITY: u16 = 140;
 pub(super) fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(Some(0)).collect()
 }
@@ -102,7 +103,8 @@ pub(super) unsafe fn child(
         0,
         class,
         wide(title).as_ptr(),
-        WS_CHILD | WS_VISIBLE | style,
+        // Suggestion lists overlap sibling controls; lower siblings must not paint over them.
+        WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | style,
         0,
         0,
         10,
@@ -242,7 +244,7 @@ unsafe fn create(model: Model) -> io::Result<Box<WindowData>> {
     }
     InitCommonControlsEx(&INITCOMMONCONTROLSEX {
         dwSize: size_of::<INITCOMMONCONTROLSEX>() as u32,
-        dwICC: ICC_BAR_CLASSES | ICC_TAB_CLASSES | ICC_STANDARD_CLASSES,
+        dwICC: ICC_BAR_CLASSES | ICC_TAB_CLASSES | ICC_STANDARD_CLASSES | ICC_DATE_CLASSES,
     });
     let data = Box::new(WindowData {
         app: RefCell::new(Native {
@@ -863,9 +865,17 @@ impl Native {
                     SetFocus(self.list);
                 }
             }
-            NEW => {
+            NEW | NEW_PRIORITY => {
                 self.model.begin_new();
+                if id == NEW_PRIORITY {
+                    self.model.draft = priority_draft(&self.model.draft);
+                }
                 self.editor_draft(false);
+                if id == NEW_PRIORITY {
+                    SendMessageW(self.editor, EM_SETSEL, 1, 1);
+                    self.suggestions_dismissed = false;
+                    self.complete();
+                }
             }
             EDIT | DUPLICATE => {
                 if self.model.begin_edit(id == DUPLICATE) {
@@ -967,7 +977,7 @@ impl Native {
                     })
                     .filter(|s| !s.is_empty())
                     .unwrap_or_else(|| self.model.date.to_string());
-                if let Some(text) = dialogs::input(
+                if let Some(date) = dialogs::date(
                     self.hwnd,
                     self.fonts[0],
                     self.dpi,
@@ -976,12 +986,8 @@ impl Native {
                     } else {
                         "Set Threshold Date"
                     },
-                    "YYYY-MM-DD, today, tomorrow, or weekday:",
-                    &current,
-                    false,
+                    resolve_date(&current, self.model.date).unwrap_or(self.model.date),
                 )? {
-                    let date = resolve_date(text.trim(), self.model.date)
-                        .ok_or_else(|| io::Error::other("Enter a valid date."))?;
                     self.model.modify(|t| Some(t.with_date(key, Some(date))))?;
                     self.rebuild(data);
                 }
@@ -1259,8 +1265,14 @@ impl Native {
                 x.max(0).min((rect.right - width).max(0)),
                 scale(self.dpi, 23),
                 width,
-                scale(self.dpi, 20) * self.suggestion_tags.len().min(8) as i32,
+                suggestion_height(self.suggestions, self.suggestion_tags.len().min(8)),
                 SWP_SHOWWINDOW | SWP_NOACTIVATE,
+            );
+            RedrawWindow(
+                self.suggestions,
+                null(),
+                null_mut(),
+                RDW_INVALIDATE | RDW_ERASE | RDW_UPDATENOW,
             );
         }
     }
@@ -1404,6 +1416,7 @@ impl Native {
             }
         } else {
             command = match key {
+                n if n == b'9' as u16 && shift => NEW_PRIORITY,
                 n if n == b'N' as u16 => NEW,
                 n if n == b'O' as u16 => OPEN,
                 n if n == b'C' as u16 => NEW_FILE,
@@ -1643,4 +1656,32 @@ unsafe fn clipboard_text(hwnd: HWND) -> io::Result<String> {
     })();
     CloseClipboard();
     result
+}
+
+fn priority_draft(draft: &str) -> String {
+    if draft.is_empty() {
+        "(".into()
+    } else {
+        format!("( {draft}")
+    }
+}
+
+pub(super) unsafe fn suggestion_height(list: HWND, rows: usize) -> i32 {
+    // Use the real font's item height and include the non-client border.
+    let item = SendMessageW(list, LB_GETITEMHEIGHT, 0, 0).max(1) as i32;
+    let mut outer: RECT = zeroed();
+    let mut client: RECT = zeroed();
+    GetWindowRect(list, &mut outer);
+    GetClientRect(list, &mut client);
+    item * rows as i32 + (outer.bottom - outer.top - client.bottom).max(2)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn priority_creation_preserves_filter_suffix() {
+        assert_eq!(priority_draft(""), "(");
+        assert_eq!(priority_draft("+work @home"), "( +work @home");
+    }
 }

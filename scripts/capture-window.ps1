@@ -1,6 +1,7 @@
 param([string]$ProcessName = 'todotxt', [int]$ProcessId = 0, [string]$OutputPath = '')
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
+if (-not ('WindowCapture' -as [type])) {
 Add-Type @'
 using System;
 using System.Runtime.InteropServices;
@@ -10,6 +11,7 @@ public class WindowCapture {
     [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr dc, uint flags);
 }
 '@
+}
 $process = if ($ProcessId) { Get-Process -Id $ProcessId } else { Get-Process -Name $ProcessName | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1 }
 if (!$process) { throw "No visible window for $ProcessName" }
 $rect = New-Object WindowCapture+RECT

@@ -10,8 +10,12 @@ Ctrl+V in the list pastes one task per line. Ctrl+A selects all visible tasks.
 
 Priorities and dates
 
+Shift+9 starts a new task with priority suggestions, retaining positive filter tags.
 I sets priority A–Z; blank removes it. Alt+Up/Down raises/lowers priority.
 Alt+Left/Right removes priority. S sets due date; Ctrl+S sets threshold date.
+Windows date dialogs offer a calendar dropdown; T selects today and Up/Down
+changes the date by one day while the calendar is closed. Enter accepts; Escape cancels.
+Portable date dialogs currently use text input.
 P postpones due date; Ctrl+Alt+P postpones threshold date.
 Ctrl+Alt+Up/Down shifts due date; Ctrl+Up/Down shifts threshold date.
 Left/Right with the same modifiers removes the date.
