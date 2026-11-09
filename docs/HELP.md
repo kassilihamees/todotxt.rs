@@ -86,3 +86,18 @@ Archive writes done.txt first. If removing tasks from todo.txt fails, duplicates
 remain, but tasks are not lost. The error dialog explains partial archive failures.
 
 The README documents build instructions, settings locations and current parity gaps.
+
+## Project task-list launcher (Windows)
+
+Double-click `target/release/run-project.bat` to open the repository's `todo.txt`
+in a separate instance. Its independent settings, window layout and logs live
+under `%LOCALAPPDATA%\todotxt.rs\profiles\project-todotxt-rs` (APPDATA is used
+only if LOCALAPPDATA is unavailable). On first launch it selects priority sort,
+wrapping and automatic refresh, with tray/global-hotkey and auto-archive disabled.
+Existing project-profile preferences are retained on subsequent launches.
+The normal application's configuration is not read or changed by this launcher.
+
+The maintained copy is `scripts/run-project.bat`; it also runs directly and can
+be copied beside the EXE again after `cargo clean`. `--dry-run` prints resolved
+paths without creating settings or starting the app. Permanent project-task
+changes belong in BACKLOG.md because todo.txt is generated one way from it.

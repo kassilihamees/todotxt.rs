@@ -495,3 +495,18 @@ cache remainder caused by concurrent file activity was rechecked and removed
 without stopping the IDE. The workspace now has exactly one executable, whose
 SHA-256 is unchanged. Upstream reference checkout and tracked source files are
 intact. Build caches will be recreated normally when development next needs them.
+
+## 2026-11-09: isolated project launcher
+
+Added run-project.bat beside the retained release EXE, with a maintained copy in
+scripts. It explicitly opens the repository todo.txt and supplies an independent
+project config in local app data, so the normal app's settings/window state/logs
+are not reused. The initial project profile disables tray/global-hotkey and
+auto-archive, and enables priority sort, wrapping and automatic refresh. Existing
+project settings are retained. The launcher resolves paths from its own location,
+checks inputs, and supports --dry-run for validation without opening any GUI.
+
+Validation: both launcher copies resolve the intended EXE, project todo.txt and
+separate config through --dry-run; initial settings JSON parses and disables
+tray/hotkey and auto-archive. Source/deployed copies match. No application was
+launched, normal settings were not written, and build caches were not recreated.
