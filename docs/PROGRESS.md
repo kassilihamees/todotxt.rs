@@ -544,6 +544,6 @@ a future threshold hid the fictional task before later completion checks. The
 test now restores date/filter state between checks; the full rerun passes.
 Linux desktop runtime remains unvalidated.
 
-The native debug build is ready. The release build could not
-replace target/release/todotxt-rs.exe because the maintainer's project instance
-is running. It was not stopped; the separately installed main app was untouched.
+The optimized release build now succeeds and updates
+target/release/todotxt-rs.exe after the maintainer closed the project instance.
+No user application was stopped or launched for this rebuild.
